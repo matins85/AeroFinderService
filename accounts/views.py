@@ -723,19 +723,25 @@ class ConcurrentAirlineScraper:
                 flight_elements = table.find_elements(By.CLASS_NAME, "flt-panel")
 
             flights = []
-            for flight_element in flight_elements:
+
+            def process_flight(flight_element):
                 try:
                     if airline_type == "crane":
-                        flight_data = self._extract_crane_flight_data(flight_element)
+                        return self._extract_crane_flight_data(flight_element)
                     else:
-                        flight_data = self._extract_videcom_flight_data(flight_element)
-
-                    if flight_data:
-                        flights.append(flight_data)
-
+                        return self._extract_videcom_flight_data(flight_element)
                 except Exception as e:
                     self.logger.warning(f"Error extracting individual flight: {e}")
-                    continue
+                    return None
+
+            # Thread pool for parallel extraction
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                futures = [executor.submit(process_flight, el) for el in flight_elements]
+
+                for future in as_completed(futures):
+                    result = future.result()
+                    if result:
+                        flights.append(result)
 
             return flights
 
@@ -744,60 +750,64 @@ class ConcurrentAirlineScraper:
             return []
 
     def _extract_crane_flight_data(self, flight_element) -> Optional[Dict]:
-        """Extract Crane flight data efficiently"""
+        """Optimized extraction of Crane flight data with ThreadPoolExecutor for fares"""
+
         try:
-            # Basic flight structure
+            sel = flight_element
+
+            # Pre-select route blocks
+            route_blocks = sel.find_elements(By.CSS_SELECTOR, ".desktop-route-block .info-block")
+            if len(route_blocks) < 2:
+                return None
+
+            departure_block, arrival_block = route_blocks[0], route_blocks[-1]
+
             flight_data = {
-                "flight_number": self._safe_extract_text(flight_element, ".flight-no"),
+                "flight_number": self._safe_extract_text(sel, ".flight-no"),
                 "departure": {
-                    "time": self._safe_extract_text(flight_element,
-                                                    ".desktop-route-block .info-block:first-child .time"),
-                    "city": self._safe_extract_text(flight_element,
-                                                    ".desktop-route-block .info-block:first-child .port"),
-                    "date": self._safe_extract_text(flight_element,
-                                                    ".desktop-route-block .info-block:first-child .date")
+                    "time": self._safe_extract_text(departure_block, ".time"),
+                    "city": self._safe_extract_text(departure_block, ".port"),
+                    "date": self._safe_extract_text(departure_block, ".date")
                 },
                 "arrival": {
-                    "time": self._safe_extract_text(flight_element,
-                                                    ".desktop-route-block .info-block:last-child .time"),
-                    "city": self._safe_extract_text(flight_element,
-                                                    ".desktop-route-block .info-block:last-child .port"),
-                    "date": self._safe_extract_text(flight_element, ".desktop-route-block .info-block:last-child .date")
+                    "time": self._safe_extract_text(arrival_block, ".time"),
+                    "city": self._safe_extract_text(arrival_block, ".port"),
+                    "date": self._safe_extract_text(arrival_block, ".date")
                 },
-                "duration": self._safe_extract_text(flight_element, ".flight-duration"),
-                "type": self._safe_extract_text(flight_element, ".total-stop"),
+                "duration": self._safe_extract_text(sel, ".flight-duration"),
+                "type": self._safe_extract_text(sel, ".total-stop"),
                 "fares": []
             }
 
-            # Extract fares
-            fare_elements = flight_element.find_elements(By.CLASS_NAME, "branded-fare-item")
             fare_classes = ["ECONOMY", "BUSINESS", "FIRST CLASS"]
+            fare_elements = sel.find_elements(By.CLASS_NAME, "branded-fare-item")[:3]
 
-            for i, fare_element in enumerate(fare_elements[:3]):  # Limit to 3 fare classes
+            def process_fare(i, fare_element):
                 try:
-                    fare_class = fare_classes[i] if i < len(fare_classes) else f"Class_{i + 1}"
+                    if fare_element.find_elements(By.CLASS_NAME, "no-seat-text"):
+                        return None
 
-                    # Check if seats available
-                    no_seat_elements = fare_element.find_elements(By.CLASS_NAME, "no-seat-text")
-                    if no_seat_elements:
-                        continue  # Skip if no seats
-
-                    price = self._safe_extract_text(fare_element, ".currency") or self._safe_extract_text(fare_element,
-                                                                                                          ".currency-best-offer")
+                    price = self._safe_extract_text(fare_element, ".currency") or \
+                            self._safe_extract_text(fare_element, ".currency-best-offer")
 
                     if price:
-                        flight_data["fares"].append({
-                            "fare_class": fare_class,
+                        return {
+                            "fare_class": fare_classes[i] if i < len(fare_classes) else f"Class_{i + 1}",
                             "price": price,
                             "seats_available": "Available"
-                        })
+                        }
+                except Exception:
+                    return None
 
-                except:
-                    continue
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                results = list(executor.map(lambda args: process_fare(*args), enumerate(fare_elements)))
 
-            return flight_data if flight_data.get("flight_number") else None
+            # Filter out None results
+            flight_data["fares"] = [fare for fare in results if fare]
 
-        except Exception as e:
+            return flight_data if flight_data["flight_number"] else None
+
+        except Exception:
             return None
 
     def _extract_videcom_flight_data(self, flight_element) -> Optional[Dict]:
@@ -852,11 +862,8 @@ class ConcurrentAirlineScraper:
     def _safe_extract_text(self, element, selector: str) -> Optional[str]:
         """Safely extract text from element using CSS selector"""
         try:
-            # Remove leading dot if present
-            cleaned_selector = selector.lstrip('.') if selector.startswith('.') else selector
-
-            found_element = element.find_element(By.CSS_SELECTOR, cleaned_selector)
-            return found_element.text.strip() if found_element.text else None
+            found_element = element.find_element(By.CSS_SELECTOR, selector)
+            return (found_element.text or found_element.get_attribute("textContent") or "").strip() or None
         except:
             return None
 
