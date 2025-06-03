@@ -64,22 +64,22 @@ class AirlineConfig:
 AIRLINES_CONFIG = [
     # Crane.aero based airlines (5 airlines)
     AirlineConfig("Air Peace", "https://book-airpeace.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "airpeace"),
-    # AirlineConfig("Arik Air", "https://arikair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "arikair"),
-    # AirlineConfig("Aero Contractors", "https://flyaero.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "flyaero"),
-    # AirlineConfig("Ibom Air", "https://book-ibomair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ibomair"),
-    # AirlineConfig("NG Eagle", "https://book-ngeagle.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ngeagle"),
+    AirlineConfig("Arik Air", "https://arikair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "arikair"),
+    AirlineConfig("Aero Contractors", "https://flyaero.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "flyaero"),
+    AirlineConfig("Ibom Air", "https://book-ibomair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ibomair"),
+    AirlineConfig("NG Eagle", "https://book-ngeagle.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ngeagle"),
 
     # Videcom based airlines (3 airlines)
-    # AirlineConfig("Max Air", "https://customer2.videcom.com/MaxAir/VARS/Public/CustomerPanels/requirementsBS.aspx",
-    #               AirlineGroup.VIDECOM, "maxair"),
-    # AirlineConfig("United Nigeria",
-    #               "https://booking.flyunitednigeria.com/VARS/Public/CustomerPanels/requirementsBS.aspx",
-    #               AirlineGroup.VIDECOM, "unitednigeria"),
-    # AirlineConfig("Rano Air", "https://customer3.videcom.com/RanoAir/VARS/Public/CustomerPanels/requirementsBS.aspx",
-    #               AirlineGroup.VIDECOM, "ranoair"),
+    AirlineConfig("Max Air", "https://customer2.videcom.com/MaxAir/VARS/Public/CustomerPanels/requirementsBS.aspx",
+                  AirlineGroup.VIDECOM, "maxair"),
+    AirlineConfig("United Nigeria",
+                  "https://booking.flyunitednigeria.com/VARS/Public/CustomerPanels/requirementsBS.aspx",
+                  AirlineGroup.VIDECOM, "unitednigeria"),
+    AirlineConfig("Rano Air", "https://customer3.videcom.com/RanoAir/VARS/Public/CustomerPanels/requirementsBS.aspx",
+                  AirlineGroup.VIDECOM, "ranoair"),
 
     # Overland Airways
-    # AirlineConfig("Overland Airways", "https://www.overlandairways.com/", AirlineGroup.OVERLAND, "overland"),
+    AirlineConfig("Overland Airways", "https://www.overlandairways.com/", AirlineGroup.OVERLAND, "overland"),
 ]
 
 
@@ -172,7 +172,7 @@ class OptimizedWebDriverManager:
         driver.implicitly_wait(5)  # Reduced implicit wait
 
         # Execute script to remove automation detection
-        # driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
         return driver
 
@@ -262,7 +262,7 @@ class OptimizedCloudflareHandler:
 
             for indicator in cloudflare_indicators:
                 try:
-                    element = WebDriverWait(driver, 3).until(
+                    element = WebDriverWait(driver, 1.5).until(
                         EC.presence_of_element_located((By.CLASS_NAME, indicator))
                     )
                     if element:
@@ -311,7 +311,7 @@ class OptimizedCloudflareHandler:
 class ConcurrentAirlineScraper:
     """Main scraper class that handles all airline types concurrently"""
 
-    def __init__(self, max_workers: int = 6):
+    def __init__(self, max_workers: int = 12):
         self.max_workers = max_workers
         self.logger = logging.getLogger(__name__)
         self.cloudflare_handler = OptimizedCloudflareHandler()
@@ -366,7 +366,7 @@ class ConcurrentAirlineScraper:
 
         try:
             # Create optimized driver
-            driver_manager = OptimizedWebDriverManager(headless=False)
+            driver_manager = OptimizedWebDriverManager(headless=True)
             driver = driver_manager.create_driver()
 
             # Choose scraping strategy based on airline group
@@ -714,6 +714,11 @@ class ConcurrentAirlineScraper:
 
     def _extract_flights_table(self, driver: webdriver.Chrome, table_id: str, airline_type: str) -> List[Dict]:
         """Extract flights from table - works for both Crane and Videcom"""
+
+        WebDriverWait(driver, 5).until(
+            EC.presence_of_element_located((By.ID, table_id))
+        )
+
         try:
             table = driver.find_element(By.ID, table_id)
 
@@ -735,7 +740,7 @@ class ConcurrentAirlineScraper:
                     return None
 
             # Thread pool for parallel extraction
-            with ThreadPoolExecutor(max_workers=8) as executor:
+            with ThreadPoolExecutor(max_workers=12) as executor:
                 futures = [executor.submit(process_flight, el) for el in flight_elements]
 
                 for future in as_completed(futures):
@@ -782,29 +787,27 @@ class ConcurrentAirlineScraper:
             fare_classes = ["ECONOMY", "BUSINESS", "FIRST CLASS"]
             fare_elements = sel.find_elements(By.CLASS_NAME, "branded-fare-item")[:3]
 
-            def process_fare(i, fare_element):
+            fares = []
+            for i, fare_element in enumerate(fare_elements):
                 try:
+                    # Skip if no seats available
                     if fare_element.find_elements(By.CLASS_NAME, "no-seat-text"):
-                        return None
+                        continue
 
-                    price = self._safe_extract_text(fare_element, ".currency") or \
-                            self._safe_extract_text(fare_element, ".currency-best-offer")
+                    # Extract price with single query
+                    price = (self._safe_extract_text(fare_element, ".currency") or
+                             self._safe_extract_text(fare_element, ".currency-best-offer"))
 
                     if price:
-                        return {
-                            "fare_class": fare_classes[i] if i < len(fare_classes) else f"Class_{i + 1}",
+                        fares.append({
+                            "type": fare_classes[i] if i < len(fare_classes) else f"Class_{i + 1}",
                             "price": price,
                             "seats_available": "Available"
-                        }
+                        })
                 except Exception:
-                    return None
+                    continue
 
-            with ThreadPoolExecutor(max_workers=3) as executor:
-                results = list(executor.map(lambda args: process_fare(*args), enumerate(fare_elements)))
-
-            # Filter out None results
-            flight_data["fares"] = [fare for fare in results if fare]
-
+            flight_data["fares"] = fares
             return flight_data if flight_data["flight_number"] else None
 
         except Exception:
@@ -838,21 +841,33 @@ class ConcurrentAirlineScraper:
                 "fares": []
             }
 
-            # Extract available fares
-            for panel_num in range(1, 5):  # Check first 3 fare classes
-                try:
-                    fare_element = flight_element.find_element(By.CLASS_NAME, f"classband-panel-{panel_num}")
-                    price = self._safe_extract_text(fare_element, ".FareClass-price")
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                futures = []
 
-                    if price:
-                        flight_data["fares"].append({
-                            "type": fare_element.get_attribute("data-classband") or f"Class_{panel_num}",
-                            "price": price,
-                            "seats_available": "Available"
-                        })
+                for panel_num in range(1, 5):
+                    futures.append(executor.submit(
+                        lambda pn=panel_num: (
+                            (lambda: (
+                                fare_element := flight_element.find_element(By.CLASS_NAME, f"classband-panel-{pn}"),
+                                price := self._safe_extract_text(fare_element, ".FareClass-price"),
+                                {
+                                    "type": fare_element.get_attribute("data-classband") or f"Class_{pn}",
+                                    "price": price,
+                                    "seats_available": "Available"
+                                } if price else None
+                            ))()
+                        )
+                    ))
 
-                except:
-                    continue
+                for future in as_completed(futures):
+                    try:
+                        result = future.result()
+                        if result and isinstance(result, tuple):
+                            result = result[2]
+                        if result:
+                            flight_data["fares"].append(result)
+                    except:
+                        continue
 
             return flight_data if flight_data.get("flight_number") else None
 
@@ -1155,7 +1170,7 @@ class ConcurrentAirlineScraper:
 
                                 try:
                                     fare_data = {
-                                        "class_name": fare.get_attribute("data-classname"),
+                                        "type": fare.get_attribute("data-classname"),
                                         "total_price": fare.find_element(By.CLASS_NAME, "btn-class").text.strip(),
                                     }
                                     flight_data["fares"].append(fare_data)
@@ -1180,7 +1195,7 @@ class SearchAirLineView(APIView):
 
     def __init__(self):
         super().__init__()
-        self.scraper = ConcurrentAirlineScraper(max_workers=6)  # Optimized for 9 airlines
+        self.scraper = ConcurrentAirlineScraper(max_workers=9)  # Optimized for 9 airlines
         self.logger = logging.getLogger(__name__)
 
     def get(self, request):
@@ -1373,4 +1388,4 @@ class SearchAirLineView(APIView):
 
 
 def index(request):
-    return HttpResponse('Welcome to PData Server API Page')
+    return HttpResponse('Welcome to AeroFinder Server API Page')
