@@ -152,6 +152,13 @@ TEMPLATES = [
 WSGI_APPLICATION = 'aerofinder.wsgi.application'
 ASGI_APPLICATION = 'aerofinder.asgi.application'
 
+# Channels Configuration
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer'
+    }
+}
+
 # Database
 # https://docs.djangoproject.com/en/3.1/ref/settings/#databases
 

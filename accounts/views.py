@@ -316,38 +316,37 @@ class ConcurrentAirlineScraper:
         self.logger = logging.getLogger(__name__)
         self.cloudflare_handler = OptimizedCloudflareHandler()
 
-    def search_all_airlines(self, search_config: FlightSearchConfig) -> Dict:
-        """Search all airlines concurrently"""
+    def search_all_airlines(self, search_config: FlightSearchConfig, airline: Optional[str] = None) -> Dict:
+        """
+        Search flights across all airlines concurrently
+        Args:
+            search_config: Flight search configuration
+            airline: Optional airline name to filter results (e.g., "airpeace", "arikair", etc.)
+        Returns:
+            Dictionary containing flight results from all airlines
+        """
         results = {}
-
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            # Submit all airline search tasks
+            # Filter airlines if specific airline is requested
+            airlines_to_search = [config for config in AIRLINES_CONFIG if not airline or config.key == airline.lower()]
+            
+            if not airlines_to_search:
+                return {"error": f"No airlines found matching '{airline}'"}
+            
             future_to_airline = {
                 executor.submit(self._search_single_airline, airline_config, search_config): airline_config
-                for airline_config in AIRLINES_CONFIG
+                for airline_config in airlines_to_search
             }
 
-            # Collect results as they complete
-            for future in as_completed(future_to_airline, timeout=180):  # 3 minutes total timeout
+            for future in as_completed(future_to_airline):
                 airline_config = future_to_airline[future]
                 try:
-                    result = future.result(timeout=60)  # 1 minute per airline
-                    results[airline_config.key] = result
-
-                    if result.get("success"):
-                        self.logger.info(
-                            f"✅ {airline_config.name} - Found {len(result.get('data', {}).get('departure', []))} flights")
-                    else:
-                        self.logger.warning(f"❌ {airline_config.name} - {result.get('error', 'Unknown error')}")
-
+                    result = future.result()
+                    if result:
+                        results[airline_config.key] = result
                 except Exception as e:
-                    self.logger.error(f"🔥 {airline_config.name} - Exception: {str(e)}")
-                    results[airline_config.key] = {
-                        "airline": airline_config.name,
-                        "success": False,
-                        "data": None,
-                        "error": f"Execution error: {str(e)}"
-                    }
+                    logging.error(f"Error searching {airline_config.name}: {str(e)}")
+                    results[airline_config.key] = {"error": str(e)}
 
         return results
 
@@ -1199,97 +1198,45 @@ class SearchAirLineView(APIView):
         self.logger = logging.getLogger(__name__)
 
     def get(self, request):
-        """Handle GET request - return search form parameters or perform search with query params"""
+        # Get airline parameter from query params
+        airline = request.query_params.get('airline', None)
+        
+        # Create search config from query parameters
+        search_config = self._create_search_config(request.query_params)
+        if not search_config:
+            return Response({"error": "Invalid search parameters"}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            # Check if search parameters are provided in query params
-            departure_city = request.GET.get('departure_city')
-            arrival_city = request.GET.get('arrival_city')
-            departure_date = request.GET.get('departure_date')
-
-            if departure_city and arrival_city and departure_date:
-                # Perform search with query parameters
-                return self._perform_search(request)
-            else:
-                # Return available search parameters and form structure
-                return Response({
-                    "message": "Flight Search API - Provide search parameters",
-                    "available_airlines": [airline.name for airline in AIRLINES_CONFIG],
-                    "required_parameters": {
-                        "departure_city": "e.g., Lagos (LOS)",
-                        "arrival_city": "e.g., Abuja (ABV)",
-                        "departure_date": "Format: dd MMM yyyy (e.g., 06 Jun 2025)",
-                        "return_date": "Required for round trips (Format: dd MMM yyyy)",
-                        "trip_type": "one-way or round-trip (default: round-trip)",
-                        "adults": "Number of adults (default: 1)",
-                        "children": "Number of children (default: 0)",
-                        "infants": "Number of infants (default: 0)"
-                    },
-                    "example_request": {
-                        "departure_city": "Lagos (LOS)",
-                        "arrival_city": "Abuja (ABV)",
-                        "departure_date": "06 Jun 2025",
-                        "return_date": "10 Jun 2025",
-                        "trip_type": "round-trip",
-                        "adults": 1,
-                        "children": 2,
-                        "infants": 1
-                    }
-                }, status=status.HTTP_200_OK)
-
+            # Perform search with optional airline filter
+            results = self.scraper.search_all_airlines(search_config, airline)
+            formatted_results = self._format_search_results(results, search_config)
+            return Response(formatted_results)
         except Exception as e:
-            self.logger.error(f"GET request error: {str(e)}")
-            return Response({
-                "error": "Internal server error",
-                "message": str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            self.logger.error(f"Error in GET request: {str(e)}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def post(self, request):
-        """Handle POST request - perform flight search with JSON payload"""
-        return self._perform_search(request)
+        # Get airline parameter from request data
+        airline = request.data.get('airline', None)
+        
+        try:
+            results = self._perform_search(request)
+            return Response(results)
+        except Exception as e:
+            self.logger.error(f"Error in POST request: {str(e)}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def _perform_search(self, request):
-        """Perform the actual flight search operation"""
-        try:
-            # Extract search parameters from request (GET params or POST data)
-            if request.method == 'GET':
-                search_params = request.GET
-            else:
-                search_params = request.data
+        search_config = self._create_search_config(request.data)
+        if not search_config:
+            raise ValueError("Invalid search parameters")
 
-            # Create search configuration with validation
-            search_config = self._create_search_config(search_params)
-
-            if not search_config:
-                return Response({
-                    "error": "Invalid search parameters",
-                    "message": "Please provide valid departure_city, arrival_city, and departure_date"
-                }, status=status.HTTP_400_BAD_REQUEST)
-
-            self.logger.info(
-                f"Starting flight search: {search_config.departure_city} -> {search_config.arrival_city} on {search_config.departure_date}")
-
-            # Perform concurrent search across all airlines
-            search_results = self.scraper.search_all_airlines(search_config)
-
-            # Process and format results
-            formatted_results = self._format_search_results(search_results, search_config)
-
-            return Response(formatted_results, status=status.HTTP_200_OK)
-
-        except ValueError as ve:
-            self.logger.warning(f"Validation error: {str(ve)}")
-            return Response({
-                "error": "Validation error",
-                "message": str(ve)
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        except Exception as e:
-            self.logger.error(f"Search error: {str(e)}")
-            return Response({
-                "error": "Search failed",
-                "message": "Unable to complete flight search. Please try again later.",
-                "details": str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        # Get airline parameter from request data
+        airline = request.data.get('airline', None)
+        
+        # Perform search with optional airline filter
+        results = self.scraper.search_all_airlines(search_config, airline)
+        return self._format_search_results(results, search_config)
 
     def _create_search_config(self, params) -> Optional[FlightSearchConfig]:
         """Create and validate search configuration from request parameters"""
