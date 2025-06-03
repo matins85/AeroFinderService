@@ -78,10 +78,12 @@ CORS_ALLOW_CREDENTIALS = True
 if environment == "development" or environment == "test":
     CORS_ORIGIN_WHITELIST = (
         os.environ.get("FRONT_END_ONE"),
+        os.environ.get("FRONT_END_TWO"),
     )
 else:
     CORS_ORIGIN_WHITELIST = (
         os.environ.get("FRONT_END_ONE"),
+        os.environ.get("FRONT_END_TWO"),
     )
 
 CSRF_COOKIE_NAME = "csrftoken"
