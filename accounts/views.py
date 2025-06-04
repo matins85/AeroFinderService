@@ -63,11 +63,11 @@ class AirlineConfig:
 # Airline configurations - All 9 airlines
 AIRLINES_CONFIG = [
     # Crane.aero based airlines (5 airlines)
-    AirlineConfig("Air Peace", "https://book-airpeace.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "airpeace"),
-    AirlineConfig("Arik Air", "https://arikair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "arikair"),
-    AirlineConfig("Aero Contractors", "https://flyaero.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "flyaero"),
-    AirlineConfig("Ibom Air", "https://book-ibomair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ibomair"),
-    AirlineConfig("NG Eagle", "https://book-ngeagle.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ngeagle"),
+    # AirlineConfig("Air Peace", "https://book-airpeace.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "airpeace"),
+    # AirlineConfig("Arik Air", "https://arikair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "arikair"),
+    # AirlineConfig("Aero Contractors", "https://flyaero.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "flyaero"),
+    # AirlineConfig("Ibom Air", "https://book-ibomair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ibomair"),
+    # AirlineConfig("NG Eagle", "https://book-ngeagle.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ngeagle"),
 
     # Videcom based airlines (3 airlines)
     AirlineConfig("Max Air", "https://customer2.videcom.com/MaxAir/VARS/Public/CustomerPanels/requirementsBS.aspx",
@@ -79,7 +79,7 @@ AIRLINES_CONFIG = [
                   AirlineGroup.VIDECOM, "ranoair"),
 
     # Overland Airways
-    AirlineConfig("Overland Airways", "https://www.overlandairways.com/", AirlineGroup.OVERLAND, "overland"),
+    # AirlineConfig("Overland Airways", "https://www.overlandairways.com/", AirlineGroup.OVERLAND, "overland"),
 ]
 
 
@@ -326,12 +326,17 @@ class ConcurrentAirlineScraper:
             Dictionary containing flight results from all airlines
         """
         results = {}
+        self.logger.info("Starting concurrent airline search...")
+        
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             # Filter airlines if specific airline is requested
             airlines_to_search = [config for config in AIRLINES_CONFIG if not airline or config.key == airline.lower()]
             
             if not airlines_to_search:
+                self.logger.warning(f"No airlines found matching '{airline}'")
                 return {"error": f"No airlines found matching '{airline}'"}
+            
+            self.logger.info(f"Searching {len(airlines_to_search)} airlines concurrently")
             
             future_to_airline = {
                 executor.submit(self._search_single_airline, airline_config, search_config): airline_config
@@ -344,10 +349,16 @@ class ConcurrentAirlineScraper:
                     result = future.result()
                     if result:
                         results[airline_config.key] = result
+                        self.logger.info(f"✅ {airline_config.name} search completed successfully")
+                        # Yield the result immediately
+                        yield airline_config.key, result
                 except Exception as e:
-                    logging.error(f"Error searching {airline_config.name}: {str(e)}")
-                    results[airline_config.key] = {"error": str(e)}
+                    self.logger.error(f"❌ Error searching {airline_config.name}: {str(e)}")
+                    error_result = {"error": str(e)}
+                    results[airline_config.key] = error_result
+                    yield airline_config.key, error_result
 
+        self.logger.info("All airline searches completed")
         return results
 
     def _search_single_airline(self, airline_config: AirlineConfig, search_config: FlightSearchConfig) -> Dict:
@@ -1170,7 +1181,7 @@ class ConcurrentAirlineScraper:
                                 try:
                                     fare_data = {
                                         "type": fare.get_attribute("data-classname"),
-                                        "total_price": fare.find_element(By.CLASS_NAME, "btn-class").text.strip(),
+                                        "price": fare.find_element(By.CLASS_NAME, "btn-class").text.strip(),
                                     }
                                     flight_data["fares"].append(fare_data)
                                 except:

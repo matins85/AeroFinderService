@@ -109,16 +109,17 @@ class FlightSearchConsumer(AsyncWebsocketConsumer):
                 trip_type=TripType(search_config.get('trip_type', 'round-trip'))
             )
 
-            # Run the search in a thread pool
+            # Run the search in a thread pool and handle results as they come in
             loop = asyncio.get_event_loop()
-            results = await loop.run_in_executor(
+            search_generator = await loop.run_in_executor(
                 None,
                 lambda: scraper.search_all_airlines(config, airline)
             )
 
-            # Stream results as they come in
-            for airline_key, result in results.items():
+            # Process results as they become available
+            for airline_key, result in search_generator:
                 yield {
+                    "type": "search_result",
                     'airline': airline_key,
                     'data': result
                 }
