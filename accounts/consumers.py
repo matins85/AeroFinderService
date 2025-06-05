@@ -79,7 +79,7 @@ class FlightSearchConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
-                    'type': 'search_complete',
+                    'type': 'complete',
                     'message': 'Search completed'
                 }
             )
