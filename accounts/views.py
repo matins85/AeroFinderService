@@ -226,6 +226,11 @@ class OptimizedWebDriverManager:
             options.binary_location = chrome_binary
             self.logger.info(f"Using GOOGLE_CHROME_BIN: {chrome_binary}")
 
+        # Create a unique user data directory for this instance
+        import tempfile
+        user_data_dir = tempfile.mkdtemp(prefix='chrome_user_data_')
+        self.logger.info(f"Created unique Chrome user data directory: {user_data_dir}")
+
         # Optimized Chrome options for better performance
         chrome_options = [
             f"--user-agent={user_agent.random}",
@@ -253,6 +258,7 @@ class OptimizedWebDriverManager:
             "--disable-sync",
             "--memory-pressure-off",
             "--max_old_space_size=4096",
+            f"--user-data-dir={user_data_dir}",  # Add unique user data directory
         ]
 
         if self.headless:
@@ -288,6 +294,12 @@ class OptimizedWebDriverManager:
             self.logger.info("Successfully created Chrome driver")
         except Exception as e:
             self.logger.error(f"Failed to create Chrome driver: {e}")
+            # Clean up the temporary directory if driver creation fails
+            try:
+                import shutil
+                shutil.rmtree(user_data_dir)
+            except:
+                pass
             raise
 
         # Optimized timeouts
@@ -298,7 +310,6 @@ class OptimizedWebDriverManager:
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
         return driver
-
 
     def _create_service(self):
         """Create Chrome service compatible with Heroku (Chrome for Testing buildpack)"""
