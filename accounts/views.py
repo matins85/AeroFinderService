@@ -221,10 +221,10 @@ class OptimizedWebDriverManager:
         options = Options()
 
         # ✅ Heroku Chrome binary (important for headless Chrome in dynos)
-        chrome_binary = os.environ.get("GOOGLE_CHROME_BIN")
+        chrome_binary = os.environ.get("CHROME_BIN")
         if chrome_binary:
             options.binary_location = chrome_binary
-            self.logger.info(f"Using GOOGLE_CHROME_BIN: {chrome_binary}")
+            self.logger.info(f"Using CHROME_BIN: {chrome_binary}")
 
         # Create a unique user data directory for this instance
         import tempfile
