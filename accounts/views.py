@@ -90,10 +90,141 @@ class OptimizedWebDriverManager:
         self.headless = headless
         self.logger = logging.getLogger(__name__)
 
+    # def create_driver(self) -> webdriver.Chrome:
+    #     """Create optimized Chrome WebDriver"""
+    #     user_agent = UserAgent()
+    #     options = Options()
+
+    #     # Optimized Chrome options for better performance
+    #     chrome_options = [
+    #         f"--user-agent={user_agent.random}",
+    #         "--no-sandbox",
+    #         "--disable-dev-shm-usage",
+    #         "--disable-blink-features=AutomationControlled",
+    #         "--disable-gpu",
+    #         "--window-size=1366,768",  # Smaller window for better performance
+    #         "--ignore-certificate-errors",
+    #         "--allow-running-insecure-content",
+    #         "--disable-extensions",
+    #         "--disable-plugins",
+    #         "--disable-images",  # Disable images for faster loading
+    #         "--disable-javascript",  # We'll enable JS selectively
+    #         "--disable-css",  # Disable CSS loading
+    #         '--proxy-server="direct://"',
+    #         "--proxy-bypass-list=*",
+    #         "--disable-logging",
+    #         "--disable-dev-tools",
+    #         "--disable-background-timer-throttling",
+    #         "--disable-backgrounding-occluded-windows",
+    #         "--disable-renderer-backgrounding",
+    #         "--disable-features=TranslateUI",
+    #         "--disable-default-apps",
+    #         "--disable-sync",
+    #         "--memory-pressure-off",
+    #         "--max_old_space_size=4096",
+    #     ]
+
+    #     if self.headless:
+    #         chrome_options.extend([
+    #             "--headless=new",
+    #             "--disable-software-rasterizer",
+    #             "--disable-web-security",
+    #         ])
+
+    #     for option in chrome_options:
+    #         options.add_argument(option)
+
+    #     # Performance preferences
+    #     prefs = {
+    #         "profile.default_content_setting_values": {
+    #             "images": 2,  # Block images
+    #             "plugins": 2,  # Block plugins
+    #             "popups": 2,  # Block popups
+    #             "geolocation": 2,  # Block location sharing
+    #             "notifications": 2,  # Block notifications
+    #             "media_stream": 2,  # Block media stream
+    #         },
+    #     }
+    #     options.add_experimental_option("prefs", prefs)
+    #     options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    #     options.add_experimental_option('useAutomationExtension', False)
+
+    #     service = self._create_service()
+
+    #     # try:
+    #     #     # Try to use webdriver-manager for automatic driver management
+    #     #     from webdriver_manager.chrome import ChromeDriverManager
+    #     #     service = Service(ChromeDriverManager().install())
+    #     #     driver = webdriver.Chrome(service=service, options=options)
+    #     # except ImportError:
+    #     #     # Fallback to system Chrome driver
+    #     #     driver = webdriver.Chrome(options=options)
+
+    #     try:
+    #         driver = webdriver.Chrome(service=service, options=options)
+    #         self.logger.info("Successfully created Chrome driver")
+    #     except Exception as e:
+    #         self.logger.error(f"Failed to create Chrome driver: {e}")
+    #         raise
+
+    #     # Optimized timeouts
+    #     driver.set_page_load_timeout(20)  # Reduced timeout
+    #     driver.implicitly_wait(5)  # Reduced implicit wait
+
+    #     # Execute script to remove automation detection
+    #     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+
+    #     return driver
+
+    # def _create_service(self):
+    #     """ Create Chrome service with multiple fallback options """
+
+    #     # Option 1: Try system ChromeDriver (installed via brew)
+    #     chromedriver_path = shutil.which('chromedriver')
+    #     if chromedriver_path:
+    #         self.logger.info(f"Using system ChromeDriver: {chromedriver_path}")
+    #         return Service(chromedriver_path)
+
+    #     # Option 2: Try common installation paths
+    #     common_paths = [
+    #         '/usr/local/bin/chromedriver',
+    #         '/opt/homebrew/bin/chromedriver',  # Apple Silicon Macs
+    #         '/usr/bin/chromedriver',
+    #     ]
+
+    #     for path in common_paths:
+    #         if os.path.exists(path) and os.access(path, os.X_OK):
+    #             self.logger.info(f"Using ChromeDriver at: {path}")
+    #             return Service(path)
+
+    #     # Option 3: Try webdriver-manager but with better error handling
+    #     try:
+    #         from webdriver_manager.chrome import ChromeDriverManager
+    #         driver_path = ChromeDriverManager().install()
+
+    #         # Verify the path is executable
+    #         if os.access(driver_path, os.X_OK):
+    #             self.logger.info(f"Using webdriver-manager ChromeDriver: {driver_path}")
+    #             return Service(driver_path)
+    #         else:
+    #             self.logger.warning(f"ChromeDriver at {driver_path} is not executable")
+    #     except Exception as e:
+    #         self.logger.warning(f"webdriver-manager failed: {e}")
+
+    #     # Option 4: No service (let Selenium find ChromeDriver)
+    #     self.logger.warning("Using default Chrome service (no explicit path)")
+    #     return None
+
     def create_driver(self) -> webdriver.Chrome:
         """Create optimized Chrome WebDriver"""
         user_agent = UserAgent()
         options = Options()
+
+        # ✅ Heroku Chrome binary (important for headless Chrome in dynos)
+        chrome_binary = os.environ.get("GOOGLE_CHROME_BIN")
+        if chrome_binary:
+            options.binary_location = chrome_binary
+            self.logger.info(f"Using GOOGLE_CHROME_BIN: {chrome_binary}")
 
         # Optimized Chrome options for better performance
         chrome_options = [
@@ -102,14 +233,14 @@ class OptimizedWebDriverManager:
             "--disable-dev-shm-usage",
             "--disable-blink-features=AutomationControlled",
             "--disable-gpu",
-            "--window-size=1366,768",  # Smaller window for better performance
+            "--window-size=1366,768",
             "--ignore-certificate-errors",
             "--allow-running-insecure-content",
             "--disable-extensions",
             "--disable-plugins",
-            "--disable-images",  # Disable images for faster loading
-            "--disable-javascript",  # We'll enable JS selectively
-            "--disable-css",  # Disable CSS loading
+            "--disable-images",
+            "--disable-javascript",
+            "--disable-css",
             '--proxy-server="direct://"',
             "--proxy-bypass-list=*",
             "--disable-logging",
@@ -137,28 +268,20 @@ class OptimizedWebDriverManager:
         # Performance preferences
         prefs = {
             "profile.default_content_setting_values": {
-                "images": 2,  # Block images
-                "plugins": 2,  # Block plugins
-                "popups": 2,  # Block popups
-                "geolocation": 2,  # Block location sharing
-                "notifications": 2,  # Block notifications
-                "media_stream": 2,  # Block media stream
+                "images": 2,
+                "plugins": 2,
+                "popups": 2,
+                "geolocation": 2,
+                "notifications": 2,
+                "media_stream": 2,
             },
         }
         options.add_experimental_option("prefs", prefs)
         options.add_experimental_option("excludeSwitches", ["enable-automation"])
         options.add_experimental_option('useAutomationExtension', False)
 
+        # Use your updated Heroku-aware _create_service()
         service = self._create_service()
-
-        # try:
-        #     # Try to use webdriver-manager for automatic driver management
-        #     from webdriver_manager.chrome import ChromeDriverManager
-        #     service = Service(ChromeDriverManager().install())
-        #     driver = webdriver.Chrome(service=service, options=options)
-        # except ImportError:
-        #     # Fallback to system Chrome driver
-        #     driver = webdriver.Chrome(options=options)
 
         try:
             driver = webdriver.Chrome(service=service, options=options)
@@ -168,18 +291,25 @@ class OptimizedWebDriverManager:
             raise
 
         # Optimized timeouts
-        driver.set_page_load_timeout(20)  # Reduced timeout
-        driver.implicitly_wait(5)  # Reduced implicit wait
+        driver.set_page_load_timeout(20)
+        driver.implicitly_wait(5)
 
-        # Execute script to remove automation detection
+        # Remove Selenium automation flag
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
         return driver
 
-    def _create_service(self):
-        """ Create Chrome service with multiple fallback options """
 
-        # Option 1: Try system ChromeDriver (installed via brew)
+    def _create_service(self):
+        """Create Chrome service compatible with Heroku (Chrome for Testing buildpack)"""
+
+        # Option 0: Check Heroku-provided CHROMEDRIVER_PATH
+        chromedriver_path = os.environ.get("CHROMEDRIVER_PATH")
+        if chromedriver_path and os.path.exists(chromedriver_path):
+            self.logger.info(f"Using CHROMEDRIVER_PATH from env: {chromedriver_path}")
+            return Service(chromedriver_path)
+
+        # Option 1: Try system ChromeDriver (installed via brew or apt)
         chromedriver_path = shutil.which('chromedriver')
         if chromedriver_path:
             self.logger.info(f"Using system ChromeDriver: {chromedriver_path}")
@@ -191,18 +321,15 @@ class OptimizedWebDriverManager:
             '/opt/homebrew/bin/chromedriver',  # Apple Silicon Macs
             '/usr/bin/chromedriver',
         ]
-
         for path in common_paths:
             if os.path.exists(path) and os.access(path, os.X_OK):
                 self.logger.info(f"Using ChromeDriver at: {path}")
                 return Service(path)
 
-        # Option 3: Try webdriver-manager but with better error handling
+        # Option 3: Try webdriver-manager
         try:
             from webdriver_manager.chrome import ChromeDriverManager
             driver_path = ChromeDriverManager().install()
-
-            # Verify the path is executable
             if os.access(driver_path, os.X_OK):
                 self.logger.info(f"Using webdriver-manager ChromeDriver: {driver_path}")
                 return Service(driver_path)
@@ -211,7 +338,7 @@ class OptimizedWebDriverManager:
         except Exception as e:
             self.logger.warning(f"webdriver-manager failed: {e}")
 
-        # Option 4: No service (let Selenium find ChromeDriver)
+        # Option 4: Fallback
         self.logger.warning("Using default Chrome service (no explicit path)")
         return None
 
