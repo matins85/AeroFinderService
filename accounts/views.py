@@ -177,7 +177,7 @@ class OptimizedWebDriverManager:
         return driver
 
     def _create_service(self):
-        """Create Chrome service with multiple fallback options"""
+        """ Create Chrome service with multiple fallback options """
 
         # Option 1: Try system ChromeDriver (installed via brew)
         chromedriver_path = shutil.which('chromedriver')
