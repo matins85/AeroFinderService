@@ -242,7 +242,7 @@ class OptimizedWebDriverManager:
 
 
 class OptimizedCloudflareHandler:
-    """Optimized Cloudflare challenge handler"""
+    """ Optimized Cloudflare challenge handler """
 
     def __init__(self, api_key: str = os.environ.get("CAPCHA_KEY")):
         self.api_key = api_key
