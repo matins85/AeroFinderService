@@ -2,7 +2,7 @@ import json
 import asyncio
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
-from .views import ConcurrentAirlineScraper, FlightSearchConfig, TripType
+from .views import ConcurrentAirlineScraper, FlightSearchConfig, TripType, AIRLINES_CONFIG
 import logging
 
 logger = logging.getLogger(__name__)
@@ -66,23 +66,7 @@ class FlightSearchConsumer(AsyncWebsocketConsumer):
             airline = search_config.get('airline')
             
             # Start the search process
-            async for result in self._stream_search_results(scraper, search_config, airline):
-                await self.channel_layer.group_send(
-                    self.room_group_name,
-                    {
-                        'type': 'search_result',
-                        'result': result
-                    }
-                )
-            
-            # Send completion message
-            await self.channel_layer.group_send(
-                self.room_group_name,
-                {
-                    'type': 'complete',
-                    'message': 'Search completed'
-                }
-            )
+            await self._stream_search_results(scraper, search_config, airline)
 
         except Exception as e:
             logger.error(f"Error in search process: {str(e)}")
@@ -109,27 +93,150 @@ class FlightSearchConsumer(AsyncWebsocketConsumer):
                 trip_type=TripType(search_config.get('trip_type', 'round-trip'))
             )
 
-            # Run the search in a thread pool and handle results as they come in
+            # Use the generator to get results as they complete
             loop = asyncio.get_event_loop()
-            search_generator = await loop.run_in_executor(
-                None,
-                lambda: scraper.search_all_airlines(config, airline)
+
+            # Run the concurrent search in a thread to avoid blocking
+            def run_search():
+                return list(scraper.search_all_airlines(config, airline))
+            
+             # Get results as they stream in
+            try:
+                # This will run the generator in a separate thread
+                results_generator = await loop.run_in_executor(None, run_search)
+                
+                # Process each result as it arrives
+                for airline_key, result in results_generator:
+                    # Log the completion status
+                    if result.get('error'):
+                        logger.warning(f"❌ {airline_key} search failed: {result['error']}")
+                    else:
+                        flight_count = len(result.get('flights', [])) if isinstance(result, dict) else 0
+                        logger.info(f"✅ {airline_key} search completed - {flight_count} flights found")
+                    
+                    # Send result immediately to WebSocket client
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            "type": "search_result",
+                            "result": {
+                                "type": "search_result",
+                                "airline": airline_key,
+                                "data": result,
+                                "timestamp": asyncio.get_event_loop().time()
+                            }
+                        }
+                    )
+
+            except Exception as e:
+                logger.error(f"Error in concurrent search: {str(e)}")
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        'type': 'error',
+                        'message': str(e)
+                    }
+                )
+                return
+            
+            # Send completion message after all results are processed
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'search_complete',
+                    'message': 'All airline searches completed'
+                }
             )
 
-            # Process results as they become available
-            for airline_key, result in search_generator:
-                yield {
-                    "type": "search_result",
-                    'airline': airline_key,
-                    'data': result
+
+            # Send completion message after all results are processed
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'search_complete',
+                    'message': 'All airline searches completed'
                 }
+            )
+
+        
+
+            # Filter airlines if specific airline is requested
+            # airlines_to_search = [config for config in AIRLINES_CONFIG if not airline or config.key == airline.lower()]
+            
+            # if not airlines_to_search:
+            #     logger.warning(f"No airlines found matching '{airline}'")
+            #     await self.channel_layer.group_send(
+            #         self.room_group_name,
+            #         {
+            #             'type': 'error',
+            #             'message': f"No airlines found matching '{airline}'"
+            #         }
+            #     )
+            #     return
+
+            # # Create tasks for each airline search
+            # loop = asyncio.get_event_loop()
+            # tasks = []
+            
+            # for airline_config in airlines_to_search:
+            #     # Create a task for each airline search
+            #     task = loop.run_in_executor(
+            #         None,
+            #         lambda ac=airline_config: scraper._search_single_airline(ac, config)
+            #     )
+            #     tasks.append((airline_config.key, task))
+
+            # # Process results as they complete
+            # for airline_key, task in tasks:
+            #     try:
+            #         result = await task
+            #         # Send result immediately as it arrives
+            #         await self.channel_layer.group_send(
+            #             self.room_group_name,
+            #             {
+            #                 "type": "search_result",
+            #                 "result": {
+            #                     "type": "search_result",
+            #                     "airline": airline_key,
+            #                     "data": result
+            #                 }
+            #             }
+            #         )
+            #     except Exception as e:
+            #         logger.error(f"Error searching {airline_key}: {str(e)}")
+            #         await self.channel_layer.group_send(
+            #             self.room_group_name,
+            #             {
+            #                 "type": "search_result",
+            #                 "result": {
+            #                     "type": "search_result",
+            #                     "airline": airline_key,
+            #                     "data": {
+            #                         "success": False,
+            #                         "error": str(e)
+            #                     }
+            #                 }
+            #             }
+            #         )
+
+            # # Send completion message after all results are processed
+            # await self.channel_layer.group_send(
+            #     self.room_group_name,
+            #     {
+            #         'type': 'search_complete',
+            #         'message': 'Search completed'
+            #     }
+            # )
 
         except Exception as e:
             logger.error(f"Error streaming results: {str(e)}")
-            yield {
-                'type': 'error',
-                'message': str(e)
-            }
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'error',
+                    'message': str(e)
+                }
+            )
 
     @database_sync_to_async
     def _create_search_config(self, data):
