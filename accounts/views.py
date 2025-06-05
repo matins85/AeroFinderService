@@ -226,6 +226,11 @@ class OptimizedWebDriverManager:
             options.binary_location = chrome_binary
             self.logger.info(f"Using GOOGLE_CHROME_BIN: {chrome_binary}")
 
+        # Create a unique user data directory for this instance
+        import tempfile
+        user_data_dir = tempfile.mkdtemp(prefix='chrome_user_data_')
+        self.logger.info(f"Created unique Chrome user data directory: {user_data_dir}")
+
         # Optimized Chrome options for better performance
         chrome_options = [
             f"--user-agent={user_agent.random}",
@@ -252,7 +257,8 @@ class OptimizedWebDriverManager:
             "--disable-default-apps",
             "--disable-sync",
             "--memory-pressure-off",
-            "--max_old_space_size=4096",# Add unique user data directory
+            "--max_old_space_size=4096",
+            # f"--user-data-dir={user_data_dir}",  # Add unique user data directory
         ]
 
         if self.headless:
