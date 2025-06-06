@@ -22,10 +22,11 @@ RUN apt-get update && apt-get install -y \
     && apt install -y ./google-chrome-stable_current_amd64.deb \
     && rm -f google-chrome-stable_current_amd64.deb \
     && wget https://storage.googleapis.com/chrome-for-testing-public/137.0.7151.68/linux64/chromedriver-linux64.zip \
-    && unzip chromedriver-linux64.zip -d /usr/bin/ \
+    && unzip -j chromedriver-linux64.zip -d /usr/bin/ \
     && chmod +x /usr/bin/chromedriver \
     && rm chromedriver-linux64.zip \
     && apt-get clean
+
 
 # Install pipenv & dependencies
 RUN pip install pipenv
