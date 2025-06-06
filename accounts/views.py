@@ -63,11 +63,11 @@ class AirlineConfig:
 # Airline configurations - All 9 airlines
 AIRLINES_CONFIG = [
     # Crane.aero based airlines (5 airlines)
-    # AirlineConfig("Air Peace", "https://book-airpeace.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "airpeace"),
-    # AirlineConfig("Arik Air", "https://arikair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "arikair"),
-    # AirlineConfig("Aero Contractors", "https://flyaero.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "flyaero"),
-    # AirlineConfig("Ibom Air", "https://book-ibomair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ibomair"),
-    # AirlineConfig("NG Eagle", "https://book-ngeagle.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ngeagle"),
+    AirlineConfig("Air Peace", "https://book-airpeace.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "airpeace"),
+    AirlineConfig("Arik Air", "https://arikair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "arikair"),
+    AirlineConfig("Aero Contractors", "https://flyaero.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "flyaero"),
+    AirlineConfig("Ibom Air", "https://book-ibomair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ibomair"),
+    AirlineConfig("NG Eagle", "https://book-ngeagle.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ngeagle"),
 
     # Videcom based airlines (3 airlines)
     AirlineConfig("Max Air", "https://customer2.videcom.com/MaxAir/VARS/Public/CustomerPanels/requirementsBS.aspx",
@@ -937,30 +937,30 @@ class ConcurrentAirlineScraper:
                 "fares": []
             }
 
-            fare_classes = ["ECONOMY", "BUSINESS", "FIRST CLASS"]
-            fare_elements = sel.find_elements(By.CLASS_NAME, "branded-fare-item")[:3]
+            # fare_classes = ["ECONOMY", "BUSINESS", "FIRST CLASS"]
+            # fare_elements = sel.find_elements(By.CLASS_NAME, "branded-fare-item")[:3]
 
-            fares = []
-            for i, fare_element in enumerate(fare_elements):
-                try:
-                    # Skip if no seats available
-                    if fare_element.find_elements(By.CLASS_NAME, "no-seat-text"):
-                        continue
+            # fares = []
+            # for i, fare_element in enumerate(fare_elements):
+            #     try:
+            #         # Skip if no seats available
+            #         if fare_element.find_elements(By.CLASS_NAME, "no-seat-text"):
+            #             continue
 
-                    # Extract price with single query
-                    price = (self._safe_extract_text(fare_element, ".currency") or
-                             self._safe_extract_text(fare_element, ".currency-best-offer"))
+            #         # Extract price with single query
+            #         price = (self._safe_extract_text(fare_element, ".currency") or
+            #                  self._safe_extract_text(fare_element, ".currency-best-offer"))
 
-                    if price:
-                        fares.append({
-                            "type": fare_classes[i] if i < len(fare_classes) else f"Class_{i + 1}",
-                            "price": price,
-                            "seats_available": "Available"
-                        })
-                except Exception:
-                    continue
+            #         if price:
+            #             fares.append({
+            #                 "type": fare_classes[i] if i < len(fare_classes) else f"Class_{i + 1}",
+            #                 "price": price,
+            #                 "seats_available": "Available"
+            #             })
+            #     except Exception:
+            #         continue
 
-            flight_data["fares"] = fares
+            # flight_data["fares"] = fares
             return flight_data if flight_data["flight_number"] else None
 
         except Exception:
