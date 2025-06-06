@@ -1,9 +1,9 @@
-# fly.toml app configuration file generated for aerofinderserver-restless-dew-1089 on 2025-06-06T04:17:26+01:00
+# fly.toml app configuration file generated for aerofinderserver-patient-pine-8491 on 2025-06-06T04:37:29+01:00
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'aerofinderserver-restless-dew-1089'
+app = 'aerofinderserver-patient-pine-8491'
 primary_region = 'jnb'
 console_command = '/code/manage.py shell'
 
