@@ -1489,4 +1489,4 @@ class SearchAirLineView(APIView):
 
 
 def index(request):
-    return HttpResponse('Welcome to AeroFinder Server API Page2')
+    return HttpResponse('Welcome to AeroFinder Server API Page')

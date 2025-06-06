@@ -20,22 +20,12 @@ RUN apt-get update && apt-get install -y \
     fonts-liberation libappindicator3-1 xdg-utils \
     && wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
     && apt install -y ./google-chrome-stable_current_amd64.deb \
-    && rm -f google-chrome-stable_current_amd64.deb
-
-# Fetch Chrome version (for info only)
-RUN google-chrome --version
-
-# Download latest chromedriver (latest stable) regardless of chrome version
-RUN CHROMEDRIVER_VERSION=$(curl -sSL https://chromedriver.storage.googleapis.com/LATEST_RELEASE) && \
-    echo "Latest ChromeDriver version: $CHROMEDRIVER_VERSION" && \
-    curl -sSL -o /tmp/chromedriver.zip https://chromedriver.storage.googleapis.com/${CHROMEDRIVER_VERSION}/chromedriver_linux64.zip && \
-    unzip /tmp/chromedriver.zip -d /usr/bin && \
-    chmod +x /usr/bin/chromedriver && \
-    rm /tmp/chromedriver.zip && \
-    apt-get clean
-
-
-
+    && rm -f google-chrome-stable_current_amd64.deb \
+    && wget https://storage.googleapis.com/chrome-for-testing-public/137.0.7151.68/linux64/chromedriver-linux64.zip \
+    && unzip chromedriver-linux64.zip -d /usr/bin/ \
+    && chmod +x /usr/bin/chromedriver \
+    && rm chromedriver-linux64.zip \
+    && apt-get clean
 
 # Install pipenv & dependencies
 RUN pip install pipenv
