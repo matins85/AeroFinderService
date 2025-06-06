@@ -448,7 +448,7 @@ class OptimizedCloudflareHandler:
 class ConcurrentAirlineScraper:
     """Main scraper class that handles all airline types concurrently"""
 
-    def __init__(self, max_workers: int = 12):
+    def __init__(self, max_workers: int = 5):
         self.max_workers = max_workers
         self.logger = logging.getLogger(__name__)
         self.cloudflare_handler = OptimizedCloudflareHandler()
