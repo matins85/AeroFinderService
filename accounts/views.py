@@ -244,21 +244,20 @@ class OptimizedWebDriverManager:
             "--disable-extensions",
             "--disable-plugins",
             "--disable-images",
-            "--disable-javascript",
             "--disable-css",
             '--proxy-server="direct://"',
             "--proxy-bypass-list=*",
-            "--disable-logging",
-            "--disable-dev-tools",
-            "--disable-background-timer-throttling",
-            "--disable-backgrounding-occluded-windows",
-            "--disable-renderer-backgrounding",
-            "--disable-features=TranslateUI",
-            "--disable-default-apps",
-            "--disable-sync",
-            "--memory-pressure-off",
-            "--max_old_space_size=4096",
-            # f"--user-data-dir={user_data_dir}",  # Add unique user data directory
+            # "--disable-logging",
+            # "--disable-dev-tools",
+            # "--disable-background-timer-throttling",
+            # "--disable-backgrounding-occluded-windows",
+            # "--disable-renderer-backgrounding",
+            # "--disable-features=TranslateUI",
+            # "--disable-default-apps",
+            # "--disable-sync",
+            # "--memory-pressure-off",
+            # "--max_old_space_size=4096",
+            f"--user-data-dir={user_data_dir}",  # Add unique user data directory
         ]
 
         if self.headless:
