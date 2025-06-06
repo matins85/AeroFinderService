@@ -2,21 +2,47 @@ ARG PYTHON_VERSION=3.9-slim
 
 FROM python:${PYTHON_VERSION}
 
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+# System env settings
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    CHROME_BIN=/usr/bin/google-chrome \
+    CHROMEDRIVER_PATH=/usr/bin/chromedriver
 
-RUN mkdir -p /code
-
+# Create app directory
 WORKDIR /code
 
-RUN pip install pipenv
-COPY Pipfile Pipfile.lock /code/
-RUN pipenv install --deploy --system
-COPY . /code
+# Install Chrome dependencies and ChromeDriver
+RUN apt-get update && apt-get install -y \
+    unzip wget curl gnupg \
+    libnss3 libxss1 libasound2 libx11-xcb1 libxcomposite1 libxcursor1 \
+    libxdamage1 libxi6 libxtst6 libatk-bridge2.0-0 libgtk-3-0 \
+    libdrm2 libgbm1 libxrandr2 libxss1 libwayland-client0 \
+    fonts-liberation libappindicator3-1 xdg-utils \
+    && wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+    && apt install -y ./google-chrome-stable_current_amd64.deb \
+    && rm -f google-chrome-stable_current_amd64.deb \
+    && LATEST=$(curl -sSL https://chromedriver.storage.googleapis.com/LATEST_RELEASE) \
+    && curl -sSL -o /tmp/chromedriver.zip https://chromedriver.storage.googleapis.com/${LATEST}/chromedriver_linux64.zip \
+    && unzip /tmp/chromedriver.zip -d /usr/bin \
+    && chmod +x /usr/bin/chromedriver \
+    && rm /tmp/chromedriver.zip \
+    && apt-get clean
 
-ENV SECRET_KEY "A2tYPIR2upcwIb7gpPHKywVTTUNnYGI3B614LxEBU3Y8d4W6gK"
+# Install pipenv & dependencies
+RUN pip install pipenv
+COPY Pipfile Pipfile.lock ./
+RUN pipenv install --deploy --system
+
+# Copy project files
+COPY . .
+
+# Set SECRET_KEY via ENV or fallback
+ENV SECRET_KEY="A2tYPIR2upcwIb7gpPHKywVTTUNnYGI3B614LxEBU3Y8d4W6gK"
+
+# Collect static files
 RUN python manage.py collectstatic --noinput
 
 EXPOSE 8000
 
-CMD ["daphne","-b","0.0.0.0","-p","8000","aerofinder.asgi"]
+# Run with Daphne (ASGI support)
+CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "aerofinder.asgi:application"]

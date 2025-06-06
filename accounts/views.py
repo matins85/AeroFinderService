@@ -63,11 +63,11 @@ class AirlineConfig:
 # Airline configurations - All 9 airlines
 AIRLINES_CONFIG = [
     # Crane.aero based airlines (5 airlines)
-    AirlineConfig("Air Peace", "https://book-airpeace.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "airpeace"),
-    AirlineConfig("Arik Air", "https://arikair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "arikair"),
-    AirlineConfig("Aero Contractors", "https://flyaero.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "flyaero"),
-    AirlineConfig("Ibom Air", "https://book-ibomair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ibomair"),
-    AirlineConfig("NG Eagle", "https://book-ngeagle.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ngeagle"),
+    # AirlineConfig("Air Peace", "https://book-airpeace.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "airpeace"),
+    # AirlineConfig("Arik Air", "https://arikair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "arikair"),
+    # AirlineConfig("Aero Contractors", "https://flyaero.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "flyaero"),
+    # AirlineConfig("Ibom Air", "https://book-ibomair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ibomair"),
+    # AirlineConfig("NG Eagle", "https://book-ngeagle.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ngeagle"),
 
     # Videcom based airlines (3 airlines)
     AirlineConfig("Max Air", "https://customer2.videcom.com/MaxAir/VARS/Public/CustomerPanels/requirementsBS.aspx",
@@ -79,7 +79,7 @@ AIRLINES_CONFIG = [
                   AirlineGroup.VIDECOM, "ranoair"),
 
     # Overland Airways
-    AirlineConfig("Overland Airways", "https://www.overlandairways.com/", AirlineGroup.OVERLAND, "overland"),
+    # AirlineConfig("Overland Airways", "https://www.overlandairways.com/", AirlineGroup.OVERLAND, "overland"),
 ]
 
 
@@ -588,7 +588,7 @@ class ConcurrentAirlineScraper:
             )
 
             # Fill form efficiently
-            self._fill_videcom_form_optimized(driver, search_config)
+            self._fill_videcom_form_optimized(driver, search_config, airline_config.key)
 
             # Submit and wait for results
             self._submit_videcom_search(driver)
@@ -703,7 +703,7 @@ class ConcurrentAirlineScraper:
         except Exception as e:
             self.logger.error(f"Error filling Crane form: {e}")
 
-    def _fill_videcom_form_optimized(self, driver: webdriver.Chrome, config: FlightSearchConfig):
+    def _fill_videcom_form_optimized(self, driver: webdriver.Chrome, config: FlightSearchConfig, airline_name: str):
         """Optimized Videcom form filling"""
         try:
             # Convert date format for Videcom
@@ -717,20 +717,27 @@ class ConcurrentAirlineScraper:
                 )
                 one_way_label.click()
                 wait(2, 3)
+                
+            if airline_name.lower() == 'ranoair':
+                departure_city = config.departure_city.split(" (")[0].upper()
+                return_city = config.arrival_city.split(" (")[0].upper()
+            else:
+                 departure_city = config.departure_city
+                 return_city = config.arrival_city
 
             dep_js_script = f"""
                 var originSelect = document.getElementById('Origin');
                 if (originSelect) {{
-                    for(var i = 0; i < originSelect.options.length; i++) {{
-                        if(originSelect.options[i].text === '{config.departure_city}') {{
-                            originSelect.selectedIndex = i;
-                            originSelect.dispatchEvent(new Event('change'));
-                            break;
-                        }}
+                    const options = Array.from(originSelect.options);
+                    const matchingOption = options.find(option => option.textContent.includes('{departure_city}'));
+                    if (matchingOption) {{
+                        originSelect.value = matchingOption.value;
+                        originSelect.dispatchEvent(new Event('change', {{ bubbles: true }}));
                     }}
                 }}
-
+                return false;
             """
+
 
             driver.execute_script(dep_js_script)
             time.sleep(2)
@@ -739,12 +746,11 @@ class ConcurrentAirlineScraper:
                 // Set cities
                 var destSelect = document.getElementById('Destination');
                 if (destSelect) {{
-                    for(var i = 0; i < destSelect.options.length; i++) {{
-                        if(destSelect.options[i].text === '{config.arrival_city}') {{
-                            destSelect.selectedIndex = i;
-                            destSelect.dispatchEvent(new Event('change'));
-                            break;
-                        }}
+                    const options = Array.from(destSelect.options);
+                    const matchingOption = options.find(option => option.textContent.includes('{return_city}'));
+                    if (matchingOption) {{
+                        destSelect.value = matchingOption.value;
+                        destSelect.dispatchEvent(new Event('change', {{ bubbles: true }}));
                     }}
                 }}
 
