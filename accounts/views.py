@@ -273,73 +273,73 @@ class OptimizedCloudflareHandler:
         self.solver = TwoCaptcha(self.api_key)
         self.logger = logging.getLogger(__name__)
 
-    def handle_protection(self, driver, max_wait: int = 10) -> bool:
-        """Detect and solve Cloudflare Turnstile if present."""
+    def handle_protection(self, driver: webdriver.Chrome, max_wait: int = 5) -> bool:
+        """
+        Detect and solve Cloudflare Turnstile challenge if present.
+        Returns True if passed or no challenge found.
+        """
         try:
-            indicators = [
-                "cf-turnstile", "cf-challenge-form", "cf-wrapper", "challenge-form"
-            ]
-
-            self.logger.info("Checking for Cloudflare challenge indicators...")
-            for indicator in indicators:
-                try:
-                    element = WebDriverWait(driver, 1.5).until(
-                        EC.presence_of_element_located((By.CLASS_NAME, indicator))
-                    )
-                    if element:
-                        self.logger.info(f"Detected Cloudflare indicator: {indicator}")
-                        return self._solve_challenge(driver, element)
-                except:
-                    continue
-
-            self.logger.info("No Cloudflare protection detected.")
-            return True  # No challenge found
+            print("Checking for Cloudflare Turnstile challenge...")
+            WebDriverWait(driver, max_wait).until(
+                EC.presence_of_element_located((By.NAME, "cf-turnstile-response"))
+            )
+            print("Cloudflare Turnstile detected.")
+            return self._solve_challenge(driver)
 
         except Exception as e:
-            self.logger.warning(f"Cloudflare handling error: {e}")
-            return True
+            print("No Cloudflare Turnstile challenge found or timed out.")
+            return True  # Proceed as normal if not present
 
-    def _solve_challenge(self, driver, element) -> bool:
-        """Solve the Turnstile challenge using 2Captcha."""
+    def _solve_challenge(self, driver: webdriver.Chrome) -> bool:
+        """Solve Turnstile challenge using 2Captcha."""
         try:
-            site_key = (
-                    element.get_attribute("data-sitekey")
-                    or element.get_attribute("data-site-key")
+            WebDriverWait(driver, 5).until(
+                lambda d: d.execute_script("return typeof window._cf_chl_opt !== 'undefined';")
             )
+
+            config = driver.execute_script("return window._cf_chl_opt || {}")
+
+            site_key = config.get("chlApiSitekey")
+            url = driver.current_url
+            mode = config.get("chlApiMode")
+            ray = config.get("cRay")
+            pagedata = config.get("chlApiRcV")
 
             if not site_key:
-                self.logger.error("Site key not found in element.")
+                print("Site key not found in page config.")
                 return False
 
-            current_url = driver.current_url
-            self.logger.info(f"Solving Turnstile challenge for: {current_url}")
-            solution = self.solver.turnstile(
-                sitekey=site_key,
-                url=current_url
-            )
+            payload = {
+                "sitekey": site_key,
+                "url": url,
+                "action": mode,
+                "data": ray,
+                "pagedata": pagedata,
+            }
 
-            if solution and 'code' in solution:
-                self.logger.info("Solution received. Injecting into page...")
+            print(f"Sending Turnstile challenge to solver: {payload}")
+            result = self.solver.turnstile(**payload)
 
+            if result and 'code' in result:
+                token = result['code']
                 js = f"""
-                    var responseField = document.querySelector('[name="cf-turnstile-response"]');
-                    if (responseField) {{
-                        responseField.value = '{solution['code']}';
-                        var form = responseField.closest('form');
+                    var respInput = document.querySelector('[name="cf-turnstile-response"]');
+                    if (respInput) {{
+                        respInput.value = '{token}';
+                        var form = respInput.closest('form');
                         if (form) form.submit();
-                    }} else {{
-                        console.warn("Turnstile response field not found.");
                     }}
                 """
                 driver.execute_script(js)
-                time.sleep(3)  # wait for form submission
+                time.sleep(3)
+                print("Turnstile challenge solved and form submitted.")
                 return True
 
-            self.logger.error("Failed to get solution code from 2Captcha.")
+            print("Solver did not return a valid code.")
             return False
 
         except Exception as e:
-            self.logger.exception(f"Error while solving challenge: {e}")
+            print(f"Exception while solving Turnstile: {e}")
             return False
 
 
