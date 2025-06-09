@@ -3,6 +3,7 @@ import time
 import shutil
 import subprocess
 import random
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from enum import Enum
@@ -20,6 +21,13 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.http import HttpResponse
+
+
+def extract_airport_code(text):
+    match = re.findall(r'\(([^)]+)\)', text)
+    if match:
+        return match[-1].upper()
+    return ''
 
 
 def wait(min_time=2, max_time=4):
@@ -64,22 +72,22 @@ class AirlineConfig:
 AIRLINES_CONFIG = [
     # Crane.aero based airlines (5 airlines)
     AirlineConfig("Air Peace", "https://book-airpeace.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "airpeace"),
-    AirlineConfig("Arik Air", "https://arikair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "arikair"),
-    AirlineConfig("Aero Contractors", "https://flyaero.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "flyaero"),
-    AirlineConfig("Ibom Air", "https://book-ibomair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ibomair"),
-    AirlineConfig("NG Eagle", "https://book-ngeagle.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ngeagle"),
+    # AirlineConfig("Arik Air", "https://arikair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "arikair"),
+    # AirlineConfig("Aero Contractors", "https://flyaero.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "flyaero"),
+    # AirlineConfig("Ibom Air", "https://book-ibomair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ibomair"),
+    # AirlineConfig("NG Eagle", "https://book-ngeagle.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ngeagle"),
 
     # Videcom based airlines (3 airlines)
-    AirlineConfig("Max Air", "https://customer2.videcom.com/MaxAir/VARS/Public/CustomerPanels/requirementsBS.aspx",
-                  AirlineGroup.VIDECOM, "maxair"),
-    AirlineConfig("United Nigeria",
-                  "https://booking.flyunitednigeria.com/VARS/Public/CustomerPanels/requirementsBS.aspx",
-                  AirlineGroup.VIDECOM, "unitednigeria"),
-    AirlineConfig("Rano Air", "https://customer3.videcom.com/RanoAir/VARS/Public/CustomerPanels/requirementsBS.aspx",
-                  AirlineGroup.VIDECOM, "ranoair"),
+    # AirlineConfig("Max Air", "https://customer2.videcom.com/MaxAir/VARS/Public/CustomerPanels/requirementsBS.aspx",
+    #               AirlineGroup.VIDECOM, "maxair"),
+    # AirlineConfig("United Nigeria",
+    #               "https://booking.flyunitednigeria.com/VARS/Public/CustomerPanels/requirementsBS.aspx",
+    #               AirlineGroup.VIDECOM, "unitednigeria"),
+    # AirlineConfig("Rano Air", "https://customer3.videcom.com/RanoAir/VARS/Public/CustomerPanels/requirementsBS.aspx",
+    #               AirlineGroup.VIDECOM, "ranoair"),
 
     # Overland Airways
-    AirlineConfig("Overland Airways", "https://www.overlandairways.com/", AirlineGroup.OVERLAND, "overland"),
+    # AirlineConfig("Overland Airways", "https://www.overlandairways.com/", AirlineGroup.OVERLAND, "overland"),
 ]
 
 
@@ -89,131 +97,6 @@ class OptimizedWebDriverManager:
     def __init__(self, headless: bool = True):
         self.headless = headless
         self.logger = logging.getLogger(__name__)
-
-    # def create_driver(self) -> webdriver.Chrome:
-    #     """Create optimized Chrome WebDriver"""
-    #     user_agent = UserAgent()
-    #     options = Options()
-
-    #     # Optimized Chrome options for better performance
-    #     chrome_options = [
-    #         f"--user-agent={user_agent.random}",
-    #         "--no-sandbox",
-    #         "--disable-dev-shm-usage",
-    #         "--disable-blink-features=AutomationControlled",
-    #         "--disable-gpu",
-    #         "--window-size=1366,768",  # Smaller window for better performance
-    #         "--ignore-certificate-errors",
-    #         "--allow-running-insecure-content",
-    #         "--disable-extensions",
-    #         "--disable-plugins",
-    #         "--disable-images",  # Disable images for faster loading
-    #         "--disable-javascript",  # We'll enable JS selectively
-    #         "--disable-css",  # Disable CSS loading
-    #         '--proxy-server="direct://"',
-    #         "--proxy-bypass-list=*",
-    #         "--disable-logging",
-    #         "--disable-dev-tools",
-    #         "--disable-background-timer-throttling",
-    #         "--disable-backgrounding-occluded-windows",
-    #         "--disable-renderer-backgrounding",
-    #         "--disable-features=TranslateUI",
-    #         "--disable-default-apps",
-    #         "--disable-sync",
-    #         "--memory-pressure-off",
-    #         "--max_old_space_size=4096",
-    #     ]
-
-    #     if self.headless:
-    #         chrome_options.extend([
-    #             "--headless=new",
-    #             "--disable-software-rasterizer",
-    #             "--disable-web-security",
-    #         ])
-
-    #     for option in chrome_options:
-    #         options.add_argument(option)
-
-    #     # Performance preferences
-    #     prefs = {
-    #         "profile.default_content_setting_values": {
-    #             "images": 2,  # Block images
-    #             "plugins": 2,  # Block plugins
-    #             "popups": 2,  # Block popups
-    #             "geolocation": 2,  # Block location sharing
-    #             "notifications": 2,  # Block notifications
-    #             "media_stream": 2,  # Block media stream
-    #         },
-    #     }
-    #     options.add_experimental_option("prefs", prefs)
-    #     options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    #     options.add_experimental_option('useAutomationExtension', False)
-
-    #     service = self._create_service()
-
-    #     # try:
-    #     #     # Try to use webdriver-manager for automatic driver management
-    #     #     from webdriver_manager.chrome import ChromeDriverManager
-    #     #     service = Service(ChromeDriverManager().install())
-    #     #     driver = webdriver.Chrome(service=service, options=options)
-    #     # except ImportError:
-    #     #     # Fallback to system Chrome driver
-    #     #     driver = webdriver.Chrome(options=options)
-
-    #     try:
-    #         driver = webdriver.Chrome(service=service, options=options)
-    #         self.logger.info("Successfully created Chrome driver")
-    #     except Exception as e:
-    #         self.logger.error(f"Failed to create Chrome driver: {e}")
-    #         raise
-
-    #     # Optimized timeouts
-    #     driver.set_page_load_timeout(20)  # Reduced timeout
-    #     driver.implicitly_wait(5)  # Reduced implicit wait
-
-    #     # Execute script to remove automation detection
-    #     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-
-    #     return driver
-
-    # def _create_service(self):
-    #     """ Create Chrome service with multiple fallback options """
-
-    #     # Option 1: Try system ChromeDriver (installed via brew)
-    #     chromedriver_path = shutil.which('chromedriver')
-    #     if chromedriver_path:
-    #         self.logger.info(f"Using system ChromeDriver: {chromedriver_path}")
-    #         return Service(chromedriver_path)
-
-    #     # Option 2: Try common installation paths
-    #     common_paths = [
-    #         '/usr/local/bin/chromedriver',
-    #         '/opt/homebrew/bin/chromedriver',  # Apple Silicon Macs
-    #         '/usr/bin/chromedriver',
-    #     ]
-
-    #     for path in common_paths:
-    #         if os.path.exists(path) and os.access(path, os.X_OK):
-    #             self.logger.info(f"Using ChromeDriver at: {path}")
-    #             return Service(path)
-
-    #     # Option 3: Try webdriver-manager but with better error handling
-    #     try:
-    #         from webdriver_manager.chrome import ChromeDriverManager
-    #         driver_path = ChromeDriverManager().install()
-
-    #         # Verify the path is executable
-    #         if os.access(driver_path, os.X_OK):
-    #             self.logger.info(f"Using webdriver-manager ChromeDriver: {driver_path}")
-    #             return Service(driver_path)
-    #         else:
-    #             self.logger.warning(f"ChromeDriver at {driver_path} is not executable")
-    #     except Exception as e:
-    #         self.logger.warning(f"webdriver-manager failed: {e}")
-
-    #     # Option 4: No service (let Selenium find ChromeDriver)
-    #     self.logger.warning("Using default Chrome service (no explicit path)")
-    #     return None
 
     def create_driver(self) -> webdriver.Chrome:
         """Create optimized Chrome WebDriver"""
@@ -242,19 +125,23 @@ class OptimizedWebDriverManager:
             "--ignore-certificate-errors",
             "--allow-running-insecure-content",
             "--disable-extensions",
+            "--start-maximized",
+
             "--disable-plugins",
             "--disable-images",
             "--disable-css",
+
             '--proxy-server="direct://"',
             "--proxy-bypass-list=*",
-            # "--disable-logging",
-            # "--disable-dev-tools",
-            # "--disable-background-timer-throttling",
-            # "--disable-backgrounding-occluded-windows",
-            # "--disable-renderer-backgrounding",
-            # "--disable-features=TranslateUI",
-            # "--disable-default-apps",
-            # "--disable-sync",
+
+            "--disable-logging",
+            "--disable-dev-tools",
+            "--disable-background-timer-throttling",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-renderer-backgrounding",
+            "--disable-features=TranslateUI",
+            "--disable-default-apps",
+            "--disable-sync",
             # "--memory-pressure-off",
             # "--max_old_space_size=4096",
             f"--user-data-dir={user_data_dir}",  # Add unique user data directory
@@ -379,76 +266,87 @@ class OptimizedWebDriverManager:
 
 
 class OptimizedCloudflareHandler:
-    """ Optimized Cloudflare challenge handler """
+    """Optimized handler for Cloudflare Turnstile CAPTCHA."""
 
-    def __init__(self, api_key: str = os.environ.get("CAPCHA_KEY")):
-        self.api_key = api_key
-        self.solver = TwoCaptcha(api_key)
+    def __init__(self, api_key: str = None):
+        self.api_key = api_key or os.getenv("CAPCHA_KEY")
+        self.solver = TwoCaptcha(self.api_key)
         self.logger = logging.getLogger(__name__)
 
-    def handle_protection(self, driver: webdriver.Chrome, max_wait: int = 15) -> bool:
-        """Handle Cloudflare protection with optimized timing"""
+    def handle_protection(self, driver, max_wait: int = 10) -> bool:
+        """Detect and solve Cloudflare Turnstile if present."""
         try:
-            # Quick check for Cloudflare elements
-            cloudflare_indicators = [
-                "cf-turnstile",
-                "cf-challenge-form",
-                "cf-wrapper",
-                "challenge-form"
+            indicators = [
+                "cf-turnstile", "cf-challenge-form", "cf-wrapper", "challenge-form"
             ]
 
-            for indicator in cloudflare_indicators:
+            self.logger.info("Checking for Cloudflare challenge indicators...")
+            for indicator in indicators:
                 try:
                     element = WebDriverWait(driver, 1.5).until(
                         EC.presence_of_element_located((By.CLASS_NAME, indicator))
                     )
                     if element:
+                        self.logger.info(f"Detected Cloudflare indicator: {indicator}")
                         return self._solve_challenge(driver, element)
                 except:
                     continue
 
+            self.logger.info("No Cloudflare protection detected.")
             return True  # No challenge found
 
         except Exception as e:
             self.logger.warning(f"Cloudflare handling error: {e}")
-            return True  # Continue anyway
+            return True
 
-    def _solve_challenge(self, driver: webdriver.Chrome, element) -> bool:
-        """Solve the actual challenge"""
+    def _solve_challenge(self, driver, element) -> bool:
+        """Solve the Turnstile challenge using 2Captcha."""
         try:
-            site_key = element.get_attribute("data-sitekey")
+            site_key = (
+                    element.get_attribute("data-sitekey")
+                    or element.get_attribute("data-site-key")
+            )
+
             if not site_key:
-                # Try alternative attributes
-                site_key = element.get_attribute("data-site-key")
+                self.logger.error("Site key not found in element.")
+                return False
 
-            if site_key:
-                current_url = driver.current_url
-                solution = self.solver.turnstile(sitekey=site_key, url=current_url)
+            current_url = driver.current_url
+            self.logger.info(f"Solving Turnstile challenge for: {current_url}")
+            solution = self.solver.turnstile(
+                sitekey=site_key,
+                url=current_url
+            )
 
-                if solution and 'code' in solution:
-                    # Inject solution
-                    js_script = f"""
-                        var responseField = document.querySelector('[name="cf-turnstile-response"]');
-                        if (responseField) {{
-                            responseField.value = '{solution['code']}';
-                            var form = responseField.closest('form');
-                            if (form) form.submit();
-                        }}
-                    """
-                    driver.execute_script(js_script)
-                    time.sleep(3)
-                    return True
+            if solution and 'code' in solution:
+                self.logger.info("Solution received. Injecting into page...")
 
+                js = f"""
+                    var responseField = document.querySelector('[name="cf-turnstile-response"]');
+                    if (responseField) {{
+                        responseField.value = '{solution['code']}';
+                        var form = responseField.closest('form');
+                        if (form) form.submit();
+                    }} else {{
+                        console.warn("Turnstile response field not found.");
+                    }}
+                """
+                driver.execute_script(js)
+                time.sleep(3)  # wait for form submission
+                return True
+
+            self.logger.error("Failed to get solution code from 2Captcha.")
             return False
+
         except Exception as e:
-            self.logger.error(f"Challenge solving error: {e}")
+            self.logger.exception(f"Error while solving challenge: {e}")
             return False
 
 
 class ConcurrentAirlineScraper:
     """Main scraper class that handles all airline types concurrently"""
 
-    def __init__(self, max_workers: int = 5):
+    def __init__(self, max_workers: int = 9):
         self.max_workers = max_workers
         self.logger = logging.getLogger(__name__)
         self.cloudflare_handler = OptimizedCloudflareHandler()
@@ -464,17 +362,17 @@ class ConcurrentAirlineScraper:
         """
         results = {}
         self.logger.info("Starting concurrent airline search...")
-        
+
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             # Filter airlines if specific airline is requested
             airlines_to_search = [config for config in AIRLINES_CONFIG if not airline or config.key == airline.lower()]
-            
+
             if not airlines_to_search:
                 self.logger.warning(f"No airlines found matching '{airline}'")
                 return {"error": f"No airlines found matching '{airline}'"}
-            
+
             self.logger.info(f"Searching {len(airlines_to_search)} airlines concurrently")
-            
+
             future_to_airline = {
                 executor.submit(self._search_single_airline, airline_config, search_config): airline_config
                 for airline_config in airlines_to_search
@@ -513,7 +411,7 @@ class ConcurrentAirlineScraper:
 
         try:
             # Create optimized driver
-            driver_manager = OptimizedWebDriverManager(headless=True)
+            driver_manager = OptimizedWebDriverManager(headless=False)
             driver = driver_manager.create_driver()
 
             # Choose scraping strategy based on airline group
@@ -607,7 +505,7 @@ class ConcurrentAirlineScraper:
             driver.get(airline_config.url)
 
             # Wait for the page to be fully loaded
-            WebDriverWait(driver, 15).until(
+            WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
 
@@ -648,10 +546,18 @@ class ConcurrentAirlineScraper:
 
             # Use JavaScript to select the Abuja option
             dep_js_script = f"""
+                function extractAirportCode(text) {{
+                    const matches = [...text.matchAll(/\\(([^)]+)\\)/g)];
+                    if (matches.length > 0) {{
+                        return matches[matches.length - 1][1].toUpperCase();
+                    }}
+                    return '';
+                }}
+    
                 var depSelect = document.getElementById('firstDepPort');
                 if (depSelect) {{
                     for(var i = 0; i < depSelect.options.length; i++) {{
-                        if(depSelect.options[i].text === '{config.departure_city}') {{
+                        if(extractAirportCode(depSelect.options[i].text) == '{extract_airport_code(config.departure_city)}') {{
                             depSelect.selectedIndex = i;
                             depSelect.dispatchEvent(new Event('change'));
                             break;
@@ -666,10 +572,18 @@ class ConcurrentAirlineScraper:
             # Set arr city and dates in one script execution
             script = f"""
                 // Set arrival city
+                function extractAirportCode(text) {{
+                    const matches = [...text.matchAll(/\\(([^)]+)\\)/g)];
+                    if (matches.length > 0) {{
+                        return matches[matches.length - 1][1].toUpperCase();
+                    }}
+                    return '';
+                }}
+                
                 var arrSelect = document.getElementById('firstArrPort');
                 if (arrSelect) {{
                     for(var i = 0; i < arrSelect.options.length; i++) {{
-                        if(arrSelect.options[i].text === '{config.arrival_city}') {{
+                        if(extractAirportCode(arrSelect.options[i].text) == '{extract_airport_code(config.arrival_city)}') {{
                             arrSelect.selectedIndex = i;
                             arrSelect.dispatchEvent(new Event('change'));
                             break;
@@ -717,19 +631,25 @@ class ConcurrentAirlineScraper:
                 )
                 one_way_label.click()
                 wait(2, 3)
-                
-            if airline_name.lower() == 'ranoair':
-                departure_city = config.departure_city.split(" (")[0].upper()
-                return_city = config.arrival_city.split(" (")[0].upper()
-            else:
-                 departure_city = config.departure_city
-                 return_city = config.arrival_city
+
+            departure_city = extract_airport_code(config.departure_city)
+            return_city = extract_airport_code(config.arrival_city)
 
             dep_js_script = f"""
+                function extractAirportCode(text) {{
+                    const matches = [...text.matchAll(/\\(([^)]+)\\)/g)];
+                    if (matches.length > 0) {{
+                        return matches[matches.length - 1][1].toUpperCase();
+                    }}
+                    return '';
+                }}
+                
                 var originSelect = document.getElementById('Origin');
                 if (originSelect) {{
                     const options = Array.from(originSelect.options);
-                    const matchingOption = options.find(option => option.textContent.includes('{departure_city}'));
+                    const matchingOption = options.find(option =>
+                        extractAirportCode(option.textContent) == '{departure_city}'
+                    );
                     if (matchingOption) {{
                         originSelect.value = matchingOption.value;
                         originSelect.dispatchEvent(new Event('change', {{ bubbles: true }}));
@@ -738,16 +658,25 @@ class ConcurrentAirlineScraper:
                 return false;
             """
 
-
             driver.execute_script(dep_js_script)
             time.sleep(2)
 
             script = f"""
                 // Set cities
+                function extractAirportCode(text) {{
+                    const matches = [...text.matchAll(/\\(([^)]+)\\)/g)];
+                    if (matches.length > 0) {{
+                        return matches[matches.length - 1][1].toUpperCase();
+                    }}
+                    return '';
+                }}
+                
                 var destSelect = document.getElementById('Destination');
                 if (destSelect) {{
                     const options = Array.from(destSelect.options);
-                    const matchingOption = options.find(option => option.textContent.includes('{return_city}'));
+                    const matchingOption = options.find(option =>
+                        extractAirportCode(option.textContent) == '{return_city}'
+                    );
                     if (matchingOption) {{
                         destSelect.value = matchingOption.value;
                         destSelect.dispatchEvent(new Event('change', {{ bubbles: true }}));
@@ -796,7 +725,7 @@ class ConcurrentAirlineScraper:
             search_button.click()
 
             # Wait for results with optimized timing
-            WebDriverWait(driver, 20).until(
+            WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.ID, "availability-flight-table-0"))
             )
             time.sleep(3)  # Reduced wait time
@@ -813,7 +742,7 @@ class ConcurrentAirlineScraper:
             submit_button.click()
 
             # Wait for results
-            WebDriverWait(driver, 20).until(
+            WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.ID, "calView_0"))
             )
             time.sleep(3)
@@ -937,30 +866,34 @@ class ConcurrentAirlineScraper:
                 "fares": []
             }
 
-            # fare_classes = ["ECONOMY", "BUSINESS", "FIRST CLASS"]
-            # fare_elements = sel.find_elements(By.CLASS_NAME, "branded-fare-item")[:3]
+            fare_classes = ["ECONOMY", "BUSINESS"]
+            fare_elements = sel.find_elements(By.CLASS_NAME, "branded-fare-item")[:2]
 
-            # fares = []
-            # for i, fare_element in enumerate(fare_elements):
-            #     try:
-            #         # Skip if no seats available
-            #         if fare_element.find_elements(By.CLASS_NAME, "no-seat-text"):
-            #             continue
+            def _process_fare_element(i, fare_element, fare_classes):
+                try:
+                    if fare_element.find_elements(By.CLASS_NAME, "no-seat-text"):
+                        return None
 
-            #         # Extract price with single query
-            #         price = (self._safe_extract_text(fare_element, ".currency") or
-            #                  self._safe_extract_text(fare_element, ".currency-best-offer"))
+                    price = (self._safe_extract_text(fare_element, ".currency") or
+                             self._safe_extract_text(fare_element, ".currency-best-offer"))
 
-            #         if price:
-            #             fares.append({
-            #                 "type": fare_classes[i] if i < len(fare_classes) else f"Class_{i + 1}",
-            #                 "price": price,
-            #                 "seats_available": "Available"
-            #             })
-            #     except Exception:
-            #         continue
+                    if price:
+                        return {
+                            "type": fare_classes[i] if i < len(fare_classes) else f"Class_{i + 1}",
+                            "price": price,
+                            "seats_available": "Available"
+                        }
+                except Exception:
+                    return None
 
-            # flight_data["fares"] = fares
+            with ThreadPoolExecutor() as executor:
+                futures = [
+                    executor.submit(_process_fare_element, i, fare_element, fare_classes)
+                    for i, fare_element in enumerate(fare_elements)
+                ]
+                fares = [res for res in (f.result() for f in as_completed(futures)) if res]
+
+            flight_data["fares"] = fares
             return flight_data if flight_data["flight_number"] else None
 
         except Exception:
@@ -1354,7 +1287,7 @@ class SearchAirLineView(APIView):
     def get(self, request):
         # Get airline parameter from query params
         airline = request.query_params.get('airline', None)
-        
+
         # Create search config from query parameters
         search_config = self._create_search_config(request.query_params)
         if not search_config:
@@ -1372,7 +1305,7 @@ class SearchAirLineView(APIView):
     def post(self, request):
         # Get airline parameter from request data
         airline = request.data.get('airline', None)
-        
+
         try:
             results = self._perform_search(request)
             return Response(results)
@@ -1387,7 +1320,7 @@ class SearchAirLineView(APIView):
 
         # Get airline parameter from request data
         airline = request.data.get('airline', None)
-        
+
         # Perform search with optional airline filter
         results = self.scraper.search_all_airlines(search_config, airline)
         return self._format_search_results(results, search_config)
