@@ -16,11 +16,12 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
-from twocaptcha import TwoCaptcha
+from twocaptcha import TwoCaptcha, TimeoutException
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.http import HttpResponse
+import undetected_chromedriver as uc
 
 
 def extract_airport_code(text):
@@ -72,22 +73,22 @@ class AirlineConfig:
 AIRLINES_CONFIG = [
     # Crane.aero based airlines (5 airlines)
     AirlineConfig("Air Peace", "https://book-airpeace.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "airpeace"),
-    # AirlineConfig("Arik Air", "https://arikair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "arikair"),
-    # AirlineConfig("Aero Contractors", "https://flyaero.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "flyaero"),
-    # AirlineConfig("Ibom Air", "https://book-ibomair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ibomair"),
-    # AirlineConfig("NG Eagle", "https://book-ngeagle.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ngeagle"),
+    AirlineConfig("Arik Air", "https://arikair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "arikair"),
+    AirlineConfig("Aero Contractors", "https://flyaero.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "flyaero"),
+    AirlineConfig("Ibom Air", "https://book-ibomair.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ibomair"),
+    AirlineConfig("NG Eagle", "https://book-ngeagle.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "ngeagle"),
 
     # Videcom based airlines (3 airlines)
-    # AirlineConfig("Max Air", "https://customer2.videcom.com/MaxAir/VARS/Public/CustomerPanels/requirementsBS.aspx",
-    #               AirlineGroup.VIDECOM, "maxair"),
-    # AirlineConfig("United Nigeria",
-    #               "https://booking.flyunitednigeria.com/VARS/Public/CustomerPanels/requirementsBS.aspx",
-    #               AirlineGroup.VIDECOM, "unitednigeria"),
-    # AirlineConfig("Rano Air", "https://customer3.videcom.com/RanoAir/VARS/Public/CustomerPanels/requirementsBS.aspx",
-    #               AirlineGroup.VIDECOM, "ranoair"),
+    AirlineConfig("Max Air", "https://customer2.videcom.com/MaxAir/VARS/Public/CustomerPanels/requirementsBS.aspx",
+                  AirlineGroup.VIDECOM, "maxair"),
+    AirlineConfig("United Nigeria",
+                  "https://booking.flyunitednigeria.com/VARS/Public/CustomerPanels/requirementsBS.aspx",
+                  AirlineGroup.VIDECOM, "unitednigeria"),
+    AirlineConfig("Rano Air", "https://customer3.videcom.com/RanoAir/VARS/Public/CustomerPanels/requirementsBS.aspx",
+                  AirlineGroup.VIDECOM, "ranoair"),
 
     # Overland Airways
-    # AirlineConfig("Overland Airways", "https://www.overlandairways.com/", AirlineGroup.OVERLAND, "overland"),
+    AirlineConfig("Overland Airways", "https://www.overlandairways.com/", AirlineGroup.OVERLAND, "overland"),
 ]
 
 
@@ -101,7 +102,8 @@ class OptimizedWebDriverManager:
     def create_driver(self) -> webdriver.Chrome:
         """Create optimized Chrome WebDriver"""
         user_agent = UserAgent()
-        options = Options()
+        # options = Options()
+        options = uc.ChromeOptions()
 
         # ✅ Heroku Chrome binary (important for headless Chrome in dynos)
         chrome_binary = os.environ.get("CHROME_BIN")
@@ -122,18 +124,16 @@ class OptimizedWebDriverManager:
             "--disable-blink-features=AutomationControlled",
             "--disable-gpu",
             "--window-size=1366,768",
+            "--disable-infobars",
             "--ignore-certificate-errors",
             "--allow-running-insecure-content",
             "--disable-extensions",
             "--start-maximized",
-
             "--disable-plugins",
             "--disable-images",
             "--disable-css",
-
             '--proxy-server="direct://"',
             "--proxy-bypass-list=*",
-
             "--disable-logging",
             "--disable-dev-tools",
             "--disable-background-timer-throttling",
@@ -142,8 +142,6 @@ class OptimizedWebDriverManager:
             "--disable-features=TranslateUI",
             "--disable-default-apps",
             "--disable-sync",
-            # "--memory-pressure-off",
-            # "--max_old_space_size=4096",
             f"--user-data-dir={user_data_dir}",  # Add unique user data directory
         ]
 
@@ -169,14 +167,15 @@ class OptimizedWebDriverManager:
             },
         }
         options.add_experimental_option("prefs", prefs)
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        options.add_experimental_option('useAutomationExtension', False)
+        # options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        # options.add_experimental_option('useAutomationExtension', False)
 
         # Use your updated Heroku-aware _create_service()
         service = self._create_service()
 
         try:
-            driver = webdriver.Chrome(service=service, options=options)
+            # driver = webdriver.Chrome(service=service, options=options)
+            driver = uc.Chrome(service=service, options=options, headless=self.headless)
             self.logger.info("Successfully created Chrome driver")
         except Exception as e:
             self.logger.error(f"Failed to create Chrome driver: {e}")
@@ -193,7 +192,12 @@ class OptimizedWebDriverManager:
         driver.implicitly_wait(5)
 
         # Remove Selenium automation flag
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        # driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": """
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined})
+            """
+        })
 
         return driver
 
@@ -265,6 +269,83 @@ class OptimizedWebDriverManager:
         return False
 
 
+# class OptimizedCloudflareHandler:
+#     """Optimized handler for Cloudflare Turnstile CAPTCHA."""
+#
+#     def __init__(self, api_key: str = None):
+#         self.api_key = api_key or os.getenv("CAPCHA_KEY")
+#         self.solver = TwoCaptcha(self.api_key)
+#         self.logger = logging.getLogger(__name__)
+#
+#     def handle_protection(self, driver: webdriver.Chrome, max_wait: int = 5) -> bool:
+#         """
+#         Detect and solve Cloudflare Turnstile challenge if present.
+#         Returns True if passed or no challenge found.
+#         """
+#         try:
+#             print("Checking for Cloudflare Turnstile challenge...")
+#             WebDriverWait(driver, max_wait).until(
+#                 EC.presence_of_element_located((By.NAME, "cf-turnstile-response"))
+#             )
+#             print("Cloudflare Turnstile detected.")
+#             return self._solve_challenge(driver)
+#
+#         except Exception as e:
+#             print("No Cloudflare Turnstile challenge found or timed out.")
+#             return True  # Proceed as normal if not present
+#
+#     def _solve_challenge(self, driver: webdriver.Chrome) -> bool:
+#         """Solve Turnstile challenge using 2Captcha."""
+#         try:
+#             WebDriverWait(driver, 5).until(
+#                 lambda d: d.execute_script("return typeof window._cf_chl_opt !== 'undefined';")
+#             )
+#
+#             config = driver.execute_script("return window._cf_chl_opt || {}")
+#
+#             site_key = config.get("chlApiSitekey")
+#             url = driver.current_url
+#             mode = config.get("chlApiMode")
+#             ray = config.get("cRay")
+#             pagedata = config.get("chlApiRcV")
+#
+#             if not site_key:
+#                 print("Site key not found in page config.")
+#                 return False
+#
+#             payload = {
+#                 "sitekey": site_key,
+#                 "url": url,
+#                 "action": mode,
+#                 "data": ray,
+#                 "pagedata": pagedata,
+#             }
+#
+#             print(f"Sending Turnstile challenge to solver: {payload}")
+#             result = self.solver.turnstile(**payload)
+#
+#             if result and 'code' in result:
+#                 token = result['code']
+#                 js = f"""
+#                     var respInput = document.querySelector('[name="cf-turnstile-response"]');
+#                     if (respInput) {{
+#                         respInput.value = '{token}';
+#                         var form = respInput.closest('form');
+#                         if (form) form.submit();
+#                     }}
+#                 """
+#                 driver.execute_script(js)
+#                 time.sleep(3)
+#                 print("Turnstile challenge solved and form submitted.")
+#                 return True
+#
+#             print("Solver did not return a valid code.")
+#             return False
+#
+#         except Exception as e:
+#             print(f"Exception while solving Turnstile: {e}")
+#             return False
+
 class OptimizedCloudflareHandler:
     """Optimized handler for Cloudflare Turnstile CAPTCHA."""
 
@@ -273,73 +354,95 @@ class OptimizedCloudflareHandler:
         self.solver = TwoCaptcha(self.api_key)
         self.logger = logging.getLogger(__name__)
 
-    def handle_protection(self, driver: webdriver.Chrome, max_wait: int = 5) -> bool:
+    def handle_protection(self, driver: webdriver.Chrome, max_wait: int = 10) -> bool:
         """
         Detect and solve Cloudflare Turnstile challenge if present.
         Returns True if passed or no challenge found.
         """
         try:
-            print("Checking for Cloudflare Turnstile challenge...")
+            print("🔍 Waiting for page to load...")
             WebDriverWait(driver, max_wait).until(
-                EC.presence_of_element_located((By.NAME, "cf-turnstile-response"))
+                lambda d: d.execute_script("return document.readyState === 'complete'")
             )
-            print("Cloudflare Turnstile detected.")
+
+            print("🔍 Checking for Turnstile iframe...")
+            WebDriverWait(driver, max_wait).until(
+                EC.presence_of_element_located((By.XPATH, "//iframe[contains(@src, 'challenges.cloudflare.com')]"))
+            )
+
+            print("⚠️ Turnstile challenge iframe found.")
             return self._solve_challenge(driver)
 
+        except TimeoutException:
+            print("✅ No Turnstile challenge iframe found (or timeout).")
+            return True  # Proceed as normal if iframe not found
         except Exception as e:
-            print("No Cloudflare Turnstile challenge found or timed out.")
-            return True  # Proceed as normal if not present
+            print(f"⚠️ Exception in handle_protection: {e}")
+            return True
 
     def _solve_challenge(self, driver: webdriver.Chrome) -> bool:
-        """Solve Turnstile challenge using 2Captcha."""
+        """Solve Turnstile challenge using 2Captcha (iframe or config-based)."""
         try:
-            WebDriverWait(driver, 5).until(
-                lambda d: d.execute_script("return typeof window._cf_chl_opt !== 'undefined';")
-            )
-
-            config = driver.execute_script("return window._cf_chl_opt || {}")
-
-            site_key = config.get("chlApiSitekey")
+            sitekey = None
             url = driver.current_url
-            mode = config.get("chlApiMode")
-            ray = config.get("cRay")
-            pagedata = config.get("chlApiRcV")
 
-            if not site_key:
-                print("Site key not found in page config.")
+            # 1. Look for iframe with Turnstile
+            iframes = driver.find_elements(By.TAG_NAME, "iframe")
+            for iframe in iframes:
+                src = iframe.get_attribute("src")
+                if src and "challenges.cloudflare.com" in src:
+                    print(f"✅ Found Turnstile iframe: {src}")
+                    driver.switch_to.frame(iframe)
+                    try:
+                        elem = WebDriverWait(driver, 10).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, "[data-sitekey]"))
+                        )
+                        sitekey = elem.get_attribute("data-sitekey")
+                        print(f"✅ Extracted sitekey from iframe: {sitekey}")
+                    finally:
+                        driver.switch_to.default_content()
+                    break
+
+            # 2. Fallback: try extracting from window config
+            if not sitekey:
+                try:
+                    WebDriverWait(driver, 3).until(
+                        lambda d: d.execute_script("return typeof window._cf_chl_opt !== 'undefined';")
+                    )
+                    config = driver.execute_script("return window._cf_chl_opt || {}")
+                    sitekey = config.get("chlApiSitekey")
+                except Exception:
+                    pass
+
+            if not sitekey:
+                print("❌ Could not find Turnstile sitekey.")
                 return False
 
-            payload = {
-                "sitekey": site_key,
-                "url": url,
-                "action": mode,
-                "data": ray,
-                "pagedata": pagedata,
-            }
-
-            print(f"Sending Turnstile challenge to solver: {payload}")
-            result = self.solver.turnstile(**payload)
+            # Send to 2Captcha
+            print(f"✅ Found Turnstile sitekey: {sitekey}")
+            result = self.solver.turnstile(sitekey=sitekey, url=url)
 
             if result and 'code' in result:
                 token = result['code']
-                js = f"""
-                    var respInput = document.querySelector('[name="cf-turnstile-response"]');
-                    if (respInput) {{
-                        respInput.value = '{token}';
-                        var form = respInput.closest('form');
+                print("✅ Received Turnstile token from solver.")
+
+                # Insert token and submit
+                driver.execute_script(f"""
+                    let input = document.querySelector('[name="cf-turnstile-response"]');
+                    if (input) {{
+                        input.value = "{token}";
+                        let form = input.closest('form');
                         if (form) form.submit();
                     }}
-                """
-                driver.execute_script(js)
+                """)
                 time.sleep(3)
-                print("Turnstile challenge solved and form submitted.")
                 return True
 
-            print("Solver did not return a valid code.")
+            print("❌ Solver did not return a token.")
             return False
 
         except Exception as e:
-            print(f"Exception while solving Turnstile: {e}")
+            print(f"⚠️ Exception while solving Turnstile: {e}")
             return False
 
 
@@ -411,7 +514,7 @@ class ConcurrentAirlineScraper:
 
         try:
             # Create optimized driver
-            driver_manager = OptimizedWebDriverManager(headless=False)
+            driver_manager = OptimizedWebDriverManager(headless=True)
             driver = driver_manager.create_driver()
 
             # Choose scraping strategy based on airline group
@@ -452,8 +555,8 @@ class ConcurrentAirlineScraper:
             driver.get(airline_config.url)
 
             # Handle Cloudflare protection
-            if not self.cloudflare_handler.handle_protection(driver):
-                return None
+            # if not self.cloudflare_handler.handle_protection(driver):
+            #     return None
 
             # Wait for search form
             WebDriverWait(driver, 10).until(
