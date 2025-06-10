@@ -14,10 +14,9 @@ WORKDIR /code
 # Install Chrome dependencies and ChromeDriver
 RUN apt-get update && apt-get install -y \
     unzip wget curl gnupg \
-    libnss3 libxss1 libasound2 libx11-xcb1 libxcomposite1 libxcursor1 \
-    libxdamage1 libxi6 libxtst6 libatk-bridge2.0-0 libgtk-3-0 \
-    libdrm2 libgbm1 libxrandr2 libxss1 libwayland-client0 \
-    fonts-liberation libappindicator3-1 xdg-utils \
+    libnss3 libx11-xcb1 libxcomposite1 libxcursor1 libxdamage1 libxi6 \
+    libxtst6 libatk-bridge2.0-0 libgtk-3-0 libdrm2 libgbm1 libxrandr2 \
+    libwayland-client0 fonts-liberation libappindicator3-1 xdg-utils \
     && wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
     && apt install -y ./google-chrome-stable_current_amd64.deb \
     && rm -f google-chrome-stable_current_amd64.deb \
@@ -26,6 +25,7 @@ RUN apt-get update && apt-get install -y \
     && chmod +x /usr/bin/chromedriver \
     && rm chromedriver-linux64.zip \
     && apt-get clean
+
 
 
 # Install pipenv & dependencies

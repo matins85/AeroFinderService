@@ -175,7 +175,9 @@ class OptimizedWebDriverManager:
 
         try:
             # driver = webdriver.Chrome(service=service, options=options)
-            driver = uc.Chrome(service=service, options=options, headless=self.headless)
+            # driver = uc.Chrome(service=service, options=options, headless=self.headless)
+            driver = uc.Chrome(driver_executable_path="/usr/bin/chromedriver", options=options, headless=self.headless)
+
             self.logger.info("Successfully created Chrome driver")
         except Exception as e:
             self.logger.error(f"Failed to create Chrome driver: {e}")
