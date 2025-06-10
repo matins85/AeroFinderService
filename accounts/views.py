@@ -172,11 +172,12 @@ class OptimizedWebDriverManager:
 
         # Use your updated Heroku-aware _create_service()
         service = self._create_service()
+        chromedriver_path = os.environ.get("CHROMEDRIVER_PATH")
 
         try:
             # driver = webdriver.Chrome(service=service, options=options)
             # driver = uc.Chrome(service=service, options=options, headless=self.headless)
-            driver = uc.Chrome(driver_executable_path="/usr/bin/chromedriver", options=options, headless=self.headless)
+            driver = uc.Chrome(driver_executable_path=chromedriver_path, options=options, headless=self.headless)
 
             self.logger.info("Successfully created Chrome driver")
         except Exception as e:
