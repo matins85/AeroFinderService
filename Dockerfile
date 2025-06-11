@@ -26,8 +26,6 @@ RUN apt-get update && apt-get install -y \
     && rm chromedriver-linux64.zip \
     && apt-get clean
 
-
-
 # Install pipenv & dependencies
 RUN pip install pipenv
 COPY Pipfile Pipfile.lock ./
