@@ -7,17 +7,18 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class FlightSearchConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.session_id = self.scope['url_route']['kwargs']['session_id']
         self.room_group_name = f'search_{self.session_id}'
-        
+
         # Join room group
         await self.channel_layer.group_add(
             self.room_group_name,
             self.channel_name
         )
-        
+
         await self.accept()
         logger.info(f"WebSocket connected for session {self.session_id}")
 
@@ -33,7 +34,7 @@ class FlightSearchConsumer(AsyncWebsocketConsumer):
         try:
             data = json.loads(text_data)
             search_config = await self._create_search_config(data)
-            
+
             if not search_config:
                 await self.send(text_data=json.dumps({
                     'type': 'error',
@@ -61,10 +62,10 @@ class FlightSearchConsumer(AsyncWebsocketConsumer):
         try:
             # Create scraper instance
             scraper = ConcurrentAirlineScraper()
-            
+
             # Get airline filter if specified
             airline = search_config.get('airline')
-            
+
             # Start the search process
             await self._stream_search_results(scraper, search_config, airline)
 
@@ -99,12 +100,12 @@ class FlightSearchConsumer(AsyncWebsocketConsumer):
             # Run the concurrent search in a thread to avoid blocking
             def run_search():
                 return list(scraper.search_all_airlines(config, airline))
-            
-             # Get results as they stream in
+
+            # Get results as they stream in
             try:
                 # This will run the generator in a separate thread
                 results_generator = await loop.run_in_executor(None, run_search)
-                
+
                 # Process each result as it arrives
                 for airline_key, result in results_generator:
                     # Log the completion status
@@ -113,7 +114,7 @@ class FlightSearchConsumer(AsyncWebsocketConsumer):
                     else:
                         flight_count = len(result.get('flights', [])) if isinstance(result, dict) else 0
                         logger.info(f"✅ {airline_key} search completed - {flight_count} flights found")
-                    
+
                     # Send result immediately to WebSocket client
                     await self.channel_layer.group_send(
                         self.room_group_name,
@@ -138,16 +139,6 @@ class FlightSearchConsumer(AsyncWebsocketConsumer):
                     }
                 )
                 return
-            
-            # Send completion message after all results are processed
-            await self.channel_layer.group_send(
-                self.room_group_name,
-                {
-                    'type': 'search_complete',
-                    'message': 'All airline searches completed'
-                }
-            )
-
 
             # Send completion message after all results are processed
             await self.channel_layer.group_send(
@@ -158,11 +149,18 @@ class FlightSearchConsumer(AsyncWebsocketConsumer):
                 }
             )
 
-        
+            # Send completion message after all results are processed
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'search_complete',
+                    'message': 'All airline searches completed'
+                }
+            )
 
             # Filter airlines if specific airline is requested
             # airlines_to_search = [config for config in AIRLINES_CONFIG if not airline or config.key == airline.lower()]
-            
+
             # if not airlines_to_search:
             #     logger.warning(f"No airlines found matching '{airline}'")
             #     await self.channel_layer.group_send(
@@ -177,7 +175,7 @@ class FlightSearchConsumer(AsyncWebsocketConsumer):
             # # Create tasks for each airline search
             # loop = asyncio.get_event_loop()
             # tasks = []
-            
+
             # for airline_config in airlines_to_search:
             #     # Create a task for each airline search
             #     task = loop.run_in_executor(
@@ -298,4 +296,4 @@ class FlightSearchConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({
             'type': 'error',
             'message': event['message']
-        })) 
+        }))
