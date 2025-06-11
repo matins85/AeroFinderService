@@ -103,8 +103,8 @@ class OptimizedWebDriverManager:
     def create_driver(self) -> webdriver.Chrome:
         """Create optimized Chrome WebDriver"""
         user_agent = UserAgent()
-        # options = Options()
-        options = uc.ChromeOptions()
+        options = Options()
+        # options = uc.ChromeOptions()
 
         # ✅ Heroku Chrome binary (important for headless Chrome in dynos)
         chrome_binary = os.environ.get("CHROME_BIN")
@@ -168,17 +168,17 @@ class OptimizedWebDriverManager:
             },
         }
         options.add_experimental_option("prefs", prefs)
-        # options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        # options.add_experimental_option('useAutomationExtension', False)
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
 
         # Use your updated Heroku-aware _create_service()
-        # service = self._create_service()
-        chromedriver_path = os.environ.get("CHROMEDRIVER_PATH")
+        service = self._create_service()
+        # chromedriver_path = os.environ.get("CHROMEDRIVER_PATH")
 
         try:
-            # driver = webdriver.Chrome(service=service, options=options)
+            driver = webdriver.Chrome(service=service, options=options)
             # driver = uc.Chrome(service=service, options=options, headless=self.headless)
-            driver = uc.Chrome(driver_executable_path=chromedriver_path, options=options, headless=self.headless)
+            # driver = uc.Chrome(driver_executable_path=chromedriver_path, options=options, headless=self.headless)
 
             self.logger.info("Successfully created Chrome driver")
         except Exception as e:
@@ -192,7 +192,7 @@ class OptimizedWebDriverManager:
             raise
 
         # Optimized timeouts
-        driver.set_page_load_timeout(20)
+        driver.set_page_load_timeout(15)
         driver.implicitly_wait(5)
 
         # Remove Selenium automation flag
