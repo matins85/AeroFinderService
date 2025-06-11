@@ -12,6 +12,7 @@ import os
 from fake_useragent import UserAgent
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from bs4 import BeautifulSoup
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -171,7 +172,7 @@ class OptimizedWebDriverManager:
         # options.add_experimental_option('useAutomationExtension', False)
 
         # Use your updated Heroku-aware _create_service()
-        service = self._create_service()
+        # service = self._create_service()
         chromedriver_path = os.environ.get("CHROMEDRIVER_PATH")
 
         try:
@@ -901,21 +902,22 @@ class ConcurrentAirlineScraper:
             return None
 
     def _extract_flights_table(self, driver: webdriver.Chrome, table_id: str, airline_type: str) -> List[Dict]:
-        """Extract flights from table - works for both Crane and Videcom"""
-
-        WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located((By.ID, table_id))
-        )
-
+        """Extract flights from table using BeautifulSoup and parallel processing"""
         try:
-            table = driver.find_element(By.ID, table_id)
+            # Wait for table to be present
+            WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.ID, table_id))
+            )
 
+            # Get the table HTML
+            table_html = driver.find_element(By.ID, table_id).get_attribute('outerHTML')
+            soup = BeautifulSoup(table_html, 'html.parser')
+
+            # Find all flight elements based on airline type
             if airline_type == "crane":
-                flight_elements = table.find_elements(By.CLASS_NAME, "js-journey")
+                flight_elements = soup.select(".js-journey")
             else:  # videcom
-                flight_elements = table.find_elements(By.CLASS_NAME, "flt-panel")
-
-            flights = []
+                flight_elements = soup.select(".flt-panel")
 
             def process_flight(flight_element):
                 try:
@@ -927,14 +929,10 @@ class ConcurrentAirlineScraper:
                     self.logger.warning(f"Error extracting individual flight: {e}")
                     return None
 
-            # Thread pool for parallel extraction
+            # Process flights in parallel
             with ThreadPoolExecutor(max_workers=12) as executor:
                 futures = [executor.submit(process_flight, el) for el in flight_elements]
-
-                for future in as_completed(futures):
-                    result = future.result()
-                    if result:
-                        flights.append(result)
+                flights = [result for result in (f.result() for f in as_completed(futures)) if result]
 
             return flights
 
@@ -943,135 +941,122 @@ class ConcurrentAirlineScraper:
             return []
 
     def _extract_crane_flight_data(self, flight_element) -> Optional[Dict]:
-        """Optimized extraction of Crane flight data with ThreadPoolExecutor for fares"""
-
+        """Extract Crane flight data using BeautifulSoup"""
         try:
-            sel = flight_element
-
-            # Pre-select route blocks
-            route_blocks = sel.find_elements(By.CSS_SELECTOR, ".desktop-route-block .info-block")
+            # Extract route blocks
+            route_blocks = flight_element.select(".desktop-route-block .info-block")
             if len(route_blocks) < 2:
                 return None
 
             departure_block, arrival_block = route_blocks[0], route_blocks[-1]
 
             flight_data = {
-                "flight_number": self._safe_extract_text(sel, ".flight-no"),
+                "flight_number": self._safe_extract_text_bs(flight_element, ".flight-no"),
                 "departure": {
-                    "time": self._safe_extract_text(departure_block, ".time"),
-                    "city": self._safe_extract_text(departure_block, ".port"),
-                    "date": self._safe_extract_text(departure_block, ".date")
+                    "time": self._safe_extract_text_bs(departure_block, ".time"),
+                    "city": self._safe_extract_text_bs(departure_block, ".port"),
+                    "date": self._safe_extract_text_bs(departure_block, ".date")
                 },
                 "arrival": {
-                    "time": self._safe_extract_text(arrival_block, ".time"),
-                    "city": self._safe_extract_text(arrival_block, ".port"),
-                    "date": self._safe_extract_text(arrival_block, ".date")
+                    "time": self._safe_extract_text_bs(arrival_block, ".time"),
+                    "city": self._safe_extract_text_bs(arrival_block, ".port"),
+                    "date": self._safe_extract_text_bs(arrival_block, ".date")
                 },
-                "duration": self._safe_extract_text(sel, ".flight-duration"),
-                "type": self._safe_extract_text(sel, ".total-stop"),
                 "fares": []
             }
 
+            # Process fares in parallel
             fare_classes = ["ECONOMY", "BUSINESS"]
-            fare_elements = sel.find_elements(By.CLASS_NAME, "branded-fare-item")[:2]
+            fare_elements = flight_element.select(".branded-fare-item")[:2]
 
-            def _process_fare_element(i, fare_element, fare_classes):
+            def process_fare(fare_element, index):
                 try:
-                    if fare_element.find_elements(By.CLASS_NAME, "no-seat-text"):
+                    # Skip fares with no available seats
+                    if fare_element.select_one(".no-seat-text"):
                         return None
 
-                    price = (self._safe_extract_text(fare_element, ".currency") or
-                             self._safe_extract_text(fare_element, ".currency-best-offer"))
+                    # Extract price
+                    price_tag = (fare_element.select_one(".currency") or 
+                               fare_element.select_one(".currency-best-offer"))
+                    price = price_tag.text.strip() if price_tag else None
 
                     if price:
                         return {
-                            "type": fare_classes[i] if i < len(fare_classes) else f"Class_{i + 1}",
-                            "price": price,
-                            "seats_available": "Available"
+                            "type": fare_classes[index] if index < len(fare_classes) else f"Class_{index + 1}",
+                            "price": price
                         }
-                except Exception:
+                except Exception as e:
+                    self.logger.warning(f"Error processing fare at index {index}: {e}")
                     return None
 
+            # Process fares in parallel
             with ThreadPoolExecutor() as executor:
                 futures = [
-                    executor.submit(_process_fare_element, i, fare_element, fare_classes)
+                    executor.submit(process_fare, fare_element, i)
                     for i, fare_element in enumerate(fare_elements)
                 ]
-                fares = [res for res in (f.result() for f in as_completed(futures)) if res]
+                fares = [result for result in (f.result() for f in as_completed(futures)) if result]
 
             flight_data["fares"] = fares
             return flight_data if flight_data["flight_number"] else None
 
-        except Exception:
+        except Exception as e:
+            self.logger.error(f"Error extracting Crane flight data: {e}")
             return None
 
     def _extract_videcom_flight_data(self, flight_element) -> Optional[Dict]:
-        """Extract Videcom flight data efficiently"""
+        """Extract Videcom flight data using BeautifulSoup"""
         try:
-            # Click to expand if needed
-            try:
-                panel_heading = flight_element.find_element(By.CLASS_NAME, "flt-panel-heading")
-                panel_heading.click()
-                time.sleep(0.5)
-            except:
-                pass
-
             flight_data = {
-                "flight_number": self._safe_extract_text(flight_element, ".flightnumber"),
+                "flight_number": self._safe_extract_text_bs(flight_element, ".flightnumber"),
                 "departure": {
-                    "time": self._safe_extract_text(flight_element, ".cal-Depart-time .time"),
-                    "city": self._safe_extract_text(flight_element, ".cal-Depart-time .city"),
-                    "date": self._safe_extract_text(flight_element, ".cal-Depart-time .flightDate")
+                    "time": self._safe_extract_text_bs(flight_element, ".cal-Depart-time .time"),
+                    "city": self._safe_extract_text_bs(flight_element, ".cal-Depart-time .city"),
+                    "date": self._safe_extract_text_bs(flight_element, ".cal-Depart-time .flightDate")
                 },
                 "arrival": {
-                    "time": self._safe_extract_text(flight_element, ".cal-Arrive-time .time"),
-                    "city": self._safe_extract_text(flight_element, ".cal-Arrive-time .city"),
-                    "date": self._safe_extract_text(flight_element, ".cal-Arrive-time .flightDate")
+                    "time": self._safe_extract_text_bs(flight_element, ".cal-Arrive-time .time"),
+                    "city": self._safe_extract_text_bs(flight_element, ".cal-Arrive-time .city"),
+                    "date": self._safe_extract_text_bs(flight_element, ".cal-Arrive-time .flightDate")
                 },
-                "duration": self._safe_extract_text(flight_element, ".flightDuration"),
-                "type": "Non-stop",  # Default for most flights
                 "fares": []
             }
 
+            def process_fare(panel_num):
+                try:
+                    fare_element = flight_element.select_one(f".classband-panel-{panel_num}")
+                    if not fare_element:
+                        return None
+
+                    price = self._safe_extract_text_bs(fare_element, ".FareClass-price")
+                    if price:
+                        return {
+                            "type": fare_element.get("data-classband") or f"Class_{panel_num}",
+                            "price": price
+                        }
+                except Exception as e:
+                    self.logger.warning(f"Error processing fare panel {panel_num}: {e}")
+                    return None
+
+            # Process fare panels in parallel
             with ThreadPoolExecutor(max_workers=4) as executor:
-                futures = []
+                futures = [executor.submit(process_fare, i) for i in range(1, 5)]
+                fares = [result for result in (f.result() for f in as_completed(futures)) if result]
 
-                for panel_num in range(1, 5):
-                    futures.append(executor.submit(
-                        lambda pn=panel_num: (
-                            (lambda: (
-                                fare_element := flight_element.find_element(By.CLASS_NAME, f"classband-panel-{pn}"),
-                                price := self._safe_extract_text(fare_element, ".FareClass-price"),
-                                {
-                                    "type": fare_element.get_attribute("data-classband") or f"Class_{pn}",
-                                    "price": price,
-                                    "seats_available": "Available"
-                                } if price else None
-                            ))()
-                        )
-                    ))
-
-                for future in as_completed(futures):
-                    try:
-                        result = future.result()
-                        if result and isinstance(result, tuple):
-                            result = result[2]
-                        if result:
-                            flight_data["fares"].append(result)
-                    except:
-                        continue
-
+            flight_data["fares"] = fares
             return flight_data if flight_data.get("flight_number") else None
 
         except Exception as e:
+            self.logger.error(f"Error extracting Videcom flight data: {e}")
             return None
 
-    def _safe_extract_text(self, element, selector: str) -> Optional[str]:
-        """Safely extract text from element using CSS selector"""
+    def _safe_extract_text_bs(self, element, selector: str) -> Optional[str]:
+        """Safely extract text from BeautifulSoup element using CSS selector"""
         try:
-            found_element = element.find_element(By.CSS_SELECTOR, selector)
-            return (found_element.text or found_element.get_attribute("textContent") or "").strip() or None
-        except:
+            found_element = element.select_one(selector)
+            return found_element.text.strip() if found_element else None
+        except Exception as e:
+            self.logger.warning(f"Error extracting text with selector {selector}: {e}")
             return None
 
     def _fill_overland_form(self, driver: webdriver.Chrome, config: FlightSearchConfig):
@@ -1254,128 +1239,95 @@ class ConcurrentAirlineScraper:
             return None
 
     def _extract_overland_flights_table(self, driver: webdriver.Chrome, table_id: str, label: str) -> List[Dict]:
-        """Extract flights from Overland table"""
+        """Extract flights from Overland table using BeautifulSoup"""
         try:
+            # Wait for table and get HTML
             table = WebDriverWait(driver, 20).until(
                 EC.presence_of_element_located((By.ID, table_id))
             )
+            table_html = table.get_attribute('outerHTML')
+            soup = BeautifulSoup(table_html, 'html.parser')
+            flight_elements = soup.select(".flightItemNew")
 
-            flights = table.find_elements(By.CLASS_NAME, "flightItemNew")
-            flight_list = []
-
-            for flight in flights:
+            def process_flight(flight):
                 try:
                     flight_data = {
                         "flight_number": None,
-                        "departure": {
-                            "time": None,
-                            "city": None,
-                            "date": None
-                        },
-                        "arrival": {
-                            "time": None,
-                            "city": None,
-                            "date": None
-                        },
+                        "departure": {"time": None, "city": None, "date": None},
+                        "arrival": {"time": None, "city": None, "date": None},
                         "duration": None,
                         "type": None,
                         "price": None,
                         "status": None,
                         "fares": []
                     }
-                    # Extract flight number and airline
-                    try:
-                        title_right = flight.find_element(By.CLASS_NAME, "flightItem_titleRight")
-                        flight_data["flight_number"] = title_right.find_element(By.TAG_NAME, "strong").text.strip()
-                    except:
-                        pass
+
+                    # Extract flight number
+                    title_right = flight.select_one(".flightItem_titleRight")
+                    if title_right:
+                        flight_data["flight_number"] = title_right.select_one("strong").text.strip()
 
                     # Extract departure info
-                    try:
-                        title_left = flight.find_element(By.CLASS_NAME, "flightItem_titleLeft")
-                        depart_time = title_left.find_elements(By.CLASS_NAME, "flightItem_titleTime")[0]
-                        flight_data["departure"]["time"] = depart_time.find_element(By.TAG_NAME, "strong").text.strip()
-                        depart_info = depart_time.find_element(By.TAG_NAME, "span").text.strip()
+                    title_left = flight.select_one(".flightItem_titleLeft")
+                    if title_left:
+                        depart_time = title_left.select(".flightItem_titleTime")[0]
+                        flight_data["departure"]["time"] = depart_time.select_one("strong").text.strip()
+                        depart_info = depart_time.select_one("span").text.strip()
                         depart_date, depart_city = depart_info.split("|")
                         flight_data["departure"]["date"] = depart_date.strip()
                         flight_data["departure"]["city"] = depart_city.strip()
-                    except:
-                        pass
 
                     # Extract arrival info
-                    try:
-                        title_left = flight.find_element(By.CLASS_NAME, "flightItem_titleLeft")
-                        arrive_time = title_left.find_elements(By.CLASS_NAME, "flightItem_titleTime")[1]
-                        flight_data["arrival"]["time"] = arrive_time.find_element(By.TAG_NAME, "strong").text.strip()
-                        arrive_info = arrive_time.find_element(By.TAG_NAME, "span").text.strip()
+                    if title_left:
+                        arrive_time = title_left.select(".flightItem_titleTime")[1]
+                        flight_data["arrival"]["time"] = arrive_time.select_one("strong").text.strip()
+                        arrive_info = arrive_time.select_one("span").text.strip()
                         arrive_date, arrive_city = arrive_info.split("|")
                         flight_data["arrival"]["date"] = arrive_date.strip()
                         flight_data["arrival"]["city"] = arrive_city.strip()
-                    except:
-                        pass
-
-                    # Extract duration and flight type
-                    try:
-                        flight_data["duration"] = flight.find_element(By.CLASS_NAME,
-                                                                      "flightItem__duration").text.strip()
-                        flight_data["type"] = flight.find_element(By.CLASS_NAME,
-                                                                  "flightChoice_tooltipToggle").text.strip()
-                    except:
-                        pass
 
                     # Extract status and price
-                    try:
-                        status_element = flight.find_element(By.CLASS_NAME, "flightBlockSelect")
+                    status_element = flight.select_one(".flightBlockSelect")
+                    if status_element:
                         status_text = status_element.text.strip()
-
                         if "SOLD OUT" in status_text:
                             flight_data["status"] = "NOT_AVAILABLE"
                             flight_data["price"] = None
                         else:
-                            try:
-                                price_element = flight.find_element(By.CLASS_NAME, "minPrice")
+                            price_element = flight.select_one(".minPrice")
+                            if price_element:
                                 flight_data["price"] = price_element.text.strip()
                                 flight_data["status"] = "AVAILABLE"
-                            except:
+                            else:
                                 flight_data["status"] = "PRICE_NOT_AVAILABLE"
                                 flight_data["price"] = None
-                    except:
-                        flight_data["status"] = "UNKNOWN"
-                        flight_data["price"] = None
 
                     # Extract fare details if available
                     if flight_data["status"] == "AVAILABLE":
-                        try:
-                            expand_button = flight.find_element(By.CLASS_NAME, "js-flightItem_titleBtn__btn")
-                            driver.execute_script("arguments[0].click();", expand_button)
-                            wait(3, 4)
-
-                            container_id = expand_button.get_attribute("aria-controls")
-                            fare_container = WebDriverWait(driver, 10).until(
-                                EC.presence_of_element_located((By.ID, container_id))
-                            )
-
-                            fare_boxes = fare_container.find_elements(By.CLASS_NAME, "flight-class__box")
-                            for fare in fare_boxes:
-                                if not fare.get_attribute("data-bookable") == "true":
-                                    continue
-
+                        fare_boxes = flight.select(".flight-class__box")
+                        for fare in fare_boxes:
+                            if fare.get("data-bookable") == "true":
                                 try:
                                     fare_data = {
-                                        "type": fare.get_attribute("data-classname"),
-                                        "price": fare.find_element(By.CLASS_NAME, "btn-class").text.strip(),
+                                        "type": fare.get("data-classname"),
+                                        "price": fare.select_one(".btn-class").text.strip()
                                     }
                                     flight_data["fares"].append(fare_data)
                                 except:
                                     continue
-                        except:
-                            pass
 
-                    flight_list.append(flight_data)
-                except:
-                    continue
+                    return flight_data
 
-            return flight_list
+                except Exception as e:
+                    self.logger.warning(f"Error processing flight: {e}")
+                    return None
+
+            # Process flights in parallel
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                futures = [executor.submit(process_flight, flight) for flight in flight_elements]
+                flights = [result for result in (f.result() for f in as_completed(futures)) if result]
+
+            return flights
 
         except Exception as e:
             self.logger.error(f"Error extracting Overland flights table: {e}")
