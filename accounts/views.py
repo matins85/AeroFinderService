@@ -660,7 +660,7 @@ class ConcurrentAirlineScraper:
                     }}
                     return '';
                 }}
-    
+
                 var depSelect = document.getElementById('firstDepPort');
                 if (depSelect) {{
                     for(var i = 0; i < depSelect.options.length; i++) {{
@@ -686,7 +686,7 @@ class ConcurrentAirlineScraper:
                     }}
                     return '';
                 }}
-                
+
                 var arrSelect = document.getElementById('firstArrPort');
                 if (arrSelect) {{
                     for(var i = 0; i < arrSelect.options.length; i++) {{
@@ -750,7 +750,7 @@ class ConcurrentAirlineScraper:
                     }}
                     return '';
                 }}
-                
+
                 var originSelect = document.getElementById('Origin');
                 if (originSelect) {{
                     const options = Array.from(originSelect.options);
@@ -777,7 +777,7 @@ class ConcurrentAirlineScraper:
                     }}
                     return '';
                 }}
-                
+
                 var destSelect = document.getElementById('Destination');
                 if (destSelect) {{
                     const options = Array.from(destSelect.options);
@@ -976,8 +976,8 @@ class ConcurrentAirlineScraper:
                         return None
 
                     # Extract price
-                    price_tag = (fare_element.select_one(".currency") or 
-                               fare_element.select_one(".currency-best-offer"))
+                    price_tag = (fare_element.select_one(".currency") or
+                                 fare_element.select_one(".currency-best-offer"))
                     price = price_tag.text.strip() if price_tag else None
 
                     if price:
