@@ -198,18 +198,17 @@ class OptimizedWebDriverManager:
         driver.implicitly_wait(5)
 
         # Remove Selenium automation flag
-        # driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
             "source": """
             Object.defineProperty(navigator, 'webdriver', {get: () => undefined})
             """
         })
-        params = {
+        driver.execute_cdp_cmd("Emulation.setGeolocationOverride", {
             "latitude": 6.5244,
             "longitude": 3.3792,
             "accuracy": 100
-        }
-        driver.execute_cdp_cmd("Emulation.setGeolocationOverride", params)
+        })
 
         return driver
 
@@ -933,6 +932,13 @@ class ConcurrentAirlineScraper:
     def _extract_flights_table(self, driver: webdriver.Chrome, table_id: str, airline_type: str, airline_name: str) -> \
             List[Dict]:
         """Extract flights from table using BeautifulSoup and parallel processing"""
+
+        driver.execute_cdp_cmd("Emulation.setGeolocationOverride", {
+            "latitude": 6.5244,
+            "longitude": 3.3792,
+            "accuracy": 100
+        })
+
         try:
             # Wait for table to be present
             WebDriverWait(driver, 20).until(
@@ -1103,7 +1109,7 @@ class ConcurrentAirlineScraper:
         """Fill Overland Airways search form"""
         try:
             # Set trip type
-            trip_type_select = WebDriverWait(driver, 10).until(
+            trip_type_select = WebDriverWait(driver, 20).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, ".flightType .comboHolder select"))
             )
 
@@ -1124,7 +1130,7 @@ class ConcurrentAirlineScraper:
             wait(1, 2)
 
             # Set departure city - Overland uses uppercase city names without codes
-            departure_input = WebDriverWait(driver, 10).until(
+            departure_input = WebDriverWait(driver, 20).until(
                 EC.presence_of_element_located((By.ID, "flightFrom"))
             )
             departure_input.click()
@@ -1147,7 +1153,7 @@ class ConcurrentAirlineScraper:
             wait(1, 2)
 
             # Set arrival city - Overland uses uppercase city names without codes
-            arrival_input = WebDriverWait(driver, 10).until(
+            arrival_input = WebDriverWait(driver, 20).until(
                 EC.presence_of_element_located((By.ID, "flightTo"))
             )
             arrival_input.click()
@@ -1196,8 +1202,12 @@ class ConcurrentAirlineScraper:
                 self.logger.error(f"Error setting dates: {e}")
                 raise
 
+            WebDriverWait(driver, 20).until(
+                EC.invisibility_of_element_located((By.ID, "overlay1"))
+            )
+
             # Set passengers
-            passengers_input = WebDriverWait(driver, 10).until(
+            passengers_input = WebDriverWait(driver, 20).until(
                 EC.presence_of_element_located((By.ID, "flightForm_passengers"))
             )
             passengers_input.click()
