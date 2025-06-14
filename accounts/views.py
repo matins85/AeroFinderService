@@ -103,14 +103,14 @@ class OptimizedWebDriverManager:
     def create_driver(self) -> webdriver.Chrome:
         """Create optimized Chrome WebDriver"""
         user_agent = UserAgent()
-        options = Options()
-        # options = uc.ChromeOptions()
+        # options = Options()
+        options = uc.ChromeOptions()
 
         # ✅ Heroku Chrome binary (important for headless Chrome in dynos)
-        chrome_binary = os.environ.get("CHROME_BIN")
-        if chrome_binary:
-            options.binary_location = chrome_binary
-            self.logger.info(f"Using CHROME_BIN: {chrome_binary}")
+        # chrome_binary = os.environ.get("CHROME_BIN")
+        # if chrome_binary:
+        #     options.binary_location = chrome_binary
+        #     self.logger.info(f"Using CHROME_BIN: {chrome_binary}")
 
         # Create a unique user data directory for this instance
         import tempfile
@@ -126,6 +126,7 @@ class OptimizedWebDriverManager:
             "--disable-gpu",
             "--window-size=1366,768",
             "--disable-infobars",
+            "--lang=en-NG",
             "--ignore-certificate-errors",
             "--allow-running-insecure-content",
             "--disable-extensions",
@@ -162,23 +163,24 @@ class OptimizedWebDriverManager:
                 "images": 2,
                 "plugins": 2,
                 "popups": 2,
-                "geolocation": 2,
+                "geolocation": 1,
                 "notifications": 2,
                 "media_stream": 2,
             },
+            "intl.accept_languages": "en-NG,en"
         }
         options.add_experimental_option("prefs", prefs)
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        options.add_experimental_option('useAutomationExtension', False)
+        # options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        # options.add_experimental_option('useAutomationExtension', False)
 
         # Use your updated Heroku-aware _create_service()
-        service = self._create_service()
-        # chromedriver_path = os.environ.get("CHROMEDRIVER_PATH")
+        # service = self._create_service()
+        chromedriver_path = os.environ.get("CHROMEDRIVER_PATH")
 
         try:
-            driver = webdriver.Chrome(service=service, options=options)
+            # driver = webdriver.Chrome(service=service, options=options)
             # driver = uc.Chrome(service=service, options=options, headless=self.headless)
-            # driver = uc.Chrome(driver_executable_path=chromedriver_path, options=options, headless=self.headless)
+            driver = uc.Chrome(driver_executable_path=chromedriver_path, options=options, headless=self.headless)
 
             self.logger.info("Successfully created Chrome driver")
         except Exception as e:
@@ -202,6 +204,12 @@ class OptimizedWebDriverManager:
             Object.defineProperty(navigator, 'webdriver', {get: () => undefined})
             """
         })
+        params = {
+            "latitude": 6.5244,
+            "longitude": 3.3792,
+            "accuracy": 100
+        }
+        driver.execute_cdp_cmd("Emulation.setGeolocationOverride", params)
 
         return driver
 
@@ -363,26 +371,33 @@ class OptimizedCloudflareHandler:
         Detect and solve Cloudflare Turnstile challenge if present.
         Returns True if passed or no challenge found.
         """
-        try:
-            print("🔍 Waiting for page to load...")
-            WebDriverWait(driver, max_wait).until(
-                lambda d: d.execute_script("return document.readyState === 'complete'")
-            )
-
-            print("🔍 Checking for Turnstile iframe...")
-            WebDriverWait(driver, max_wait).until(
-                EC.presence_of_element_located((By.XPATH, "//iframe[contains(@src, 'challenges.cloudflare.com')]"))
-            )
-
-            print("⚠️ Turnstile challenge iframe found.")
-            return self._solve_challenge(driver)
-
-        except TimeoutException:
-            print("✅ No Turnstile challenge iframe found (or timeout).")
-            return True  # Proceed as normal if iframe not found
-        except Exception as e:
-            print(f"⚠️ Exception in handle_protection: {e}")
-            return True
+        page = driver.page_source.lower()
+        return (
+                "verify you are human" in page or
+                "cf-turnstile-response" in page or
+                "needs to review the security" in page
+        )
+        # try:
+        #     print("🔍 Waiting for page to load...")
+        #     WebDriverWait(driver, max_wait).until(
+        #         lambda d: d.execute_script("return document.readyState === 'complete'")
+        #     )
+        #
+        #     print("🔍 Checking for Turnstile iframe...")
+        #     WebDriverWait(driver, max_wait).until(
+        #         EC.presence_of_element_located((By.XPATH, "//iframe[contains(@src, 'challenges.cloudflare.com')]"))
+        #     )
+        #
+        #     print("⚠️ Turnstile challenge iframe found.")
+        #     # return self._solve_challenge(driver)
+        #     return True
+        #
+        # except TimeoutException:
+        #     print("✅ No Turnstile challenge iframe found (or timeout).")
+        #     return False  # Proceed as normal if iframe not found
+        # except Exception as e:
+        #     print(f"⚠️ Exception in handle_protection: {e}")
+        #     return False
 
     def _solve_challenge(self, driver: webdriver.Chrome) -> bool:
         """Solve Turnstile challenge using 2Captcha (iframe or config-based)."""
@@ -553,32 +568,43 @@ class ConcurrentAirlineScraper:
 
     def _scrape_crane_airline(self, driver: webdriver.Chrome, airline_config: AirlineConfig,
                               search_config: FlightSearchConfig) -> Optional[Dict]:
-        """Optimized Crane.aero scraping"""
-        try:
-            self.logger.info(f"🔍 Searching {airline_config.name}...")
-            driver.get(airline_config.url)
+        """Optimized Crane.aero scraping with driver reset on retry"""
 
-            # Handle Cloudflare protection
-            # if not self.cloudflare_handler.handle_protection(driver):
-            #     return None
+        MAX_RETRIES = 4
+        retries = 0
 
-            # Wait for search form
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CLASS_NAME, "trip-type-wrapper"))
-            )
+        while retries <= MAX_RETRIES:
+            try:
+                print(f"🔍 Attempt {retries + 1}: {airline_config.name}")
 
-            # Fill form efficiently
-            self._fill_crane_form_optimized(driver, search_config)
+                # For retries after the first, create a fresh driver
+                if retries > 0:
+                    print("♻️ Restarting browser session...")
+                    driver.quit()
+                    driver = OptimizedWebDriverManager().create_driver()
 
-            # Submit and wait for results
-            self._submit_crane_search(driver)
+                driver.get(airline_config.url)
 
-            # Extract results
-            return self._extract_crane_results_optimized(driver, search_config.trip_type)
+                if self.cloudflare_handler.handle_protection(driver):
+                    print("⚠️ Cloudflare protection detected.")
+                    retries += 1
+                    time.sleep(2)
+                    continue
 
-        except Exception as e:
-            self.logger.error(f"Crane scraping error for {airline_config.name}: {e}")
-            return None
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "trip-type-wrapper"))
+                )
+
+                self._fill_crane_form_optimized(driver, search_config)
+                self._submit_crane_search(driver)
+                return self._extract_crane_results_optimized(driver, search_config.trip_type, airline_config.key)
+
+            except Exception as e:
+                self.logger.error(f"❌ Scrape attempt {retries + 1} failed: {e}")
+                retries += 1
+
+        self.logger.error(f"❌ Max retries exceeded for {airline_config.name}")
+        return None
 
     def _scrape_videcom_airline(self, driver: webdriver.Chrome, airline_config: AirlineConfig,
                                 search_config: FlightSearchConfig) -> Optional[Dict]:
@@ -599,7 +625,7 @@ class ConcurrentAirlineScraper:
             self._submit_videcom_search(driver)
 
             # Extract results
-            return self._extract_videcom_results_optimized(driver, search_config.trip_type)
+            return self._extract_videcom_results_optimized(driver, search_config.trip_type, airline_config.key)
 
         except Exception as e:
             self.logger.error(f"Videcom scraping error for {airline_config.name}: {e}")
@@ -857,19 +883,22 @@ class ConcurrentAirlineScraper:
         except Exception as e:
             self.logger.error(f"Error submitting Videcom search: {e}")
 
-    def _extract_crane_results_optimized(self, driver: webdriver.Chrome, trip_type: TripType) -> Dict:
+    def _extract_crane_results_optimized(self, driver: webdriver.Chrome, trip_type: TripType,
+                                         airline_name) -> Dict:
         """Optimized Crane results extraction"""
         try:
             results = {}
 
             # Extract departure flights
-            departure_flights = self._extract_flights_table(driver, "availability-flight-table-0", "crane")
+            departure_flights = self._extract_flights_table(driver, "availability-flight-table-0",
+                                                            "crane", airline_name)
             if departure_flights:
                 results['departure'] = departure_flights
 
             # Extract return flights for round trips
             if trip_type == TripType.ROUND_TRIP:
-                return_flights = self._extract_flights_table(driver, "availability-flight-table-1", "crane")
+                return_flights = self._extract_flights_table(driver, "availability-flight-table-1",
+                                                             "crane", airline_name)
                 if return_flights:
                     results['return'] = return_flights
 
@@ -879,19 +908,19 @@ class ConcurrentAirlineScraper:
             self.logger.error(f"Error extracting Crane results: {e}")
             return None
 
-    def _extract_videcom_results_optimized(self, driver: webdriver.Chrome, trip_type: TripType) -> Dict:
+    def _extract_videcom_results_optimized(self, driver: webdriver.Chrome, trip_type: TripType, airline_name) -> Dict:
         """Optimized Videcom results extraction"""
         try:
             results = {}
 
             # Extract departure flights
-            departure_flights = self._extract_flights_table(driver, "calView_0", "videcom")
+            departure_flights = self._extract_flights_table(driver, "calView_0", "videcom", airline_name)
             if departure_flights:
                 results['departure'] = departure_flights
 
             # Extract return flights for round trips
             if trip_type == TripType.ROUND_TRIP:
-                return_flights = self._extract_flights_table(driver, "calView_1", "videcom")
+                return_flights = self._extract_flights_table(driver, "calView_1", "videcom", airline_name)
                 if return_flights:
                     results['return'] = return_flights
 
@@ -901,11 +930,12 @@ class ConcurrentAirlineScraper:
             self.logger.error(f"Error extracting Videcom results: {e}")
             return None
 
-    def _extract_flights_table(self, driver: webdriver.Chrome, table_id: str, airline_type: str) -> List[Dict]:
+    def _extract_flights_table(self, driver: webdriver.Chrome, table_id: str, airline_type: str, airline_name: str) -> \
+            List[Dict]:
         """Extract flights from table using BeautifulSoup and parallel processing"""
         try:
             # Wait for table to be present
-            WebDriverWait(driver, 5).until(
+            WebDriverWait(driver, 20).until(
                 EC.presence_of_element_located((By.ID, table_id))
             )
 
@@ -922,7 +952,7 @@ class ConcurrentAirlineScraper:
             def process_flight(flight_element):
                 try:
                     if airline_type == "crane":
-                        return self._extract_crane_flight_data(flight_element)
+                        return self._extract_crane_flight_data(flight_element, airline_name)
                     else:
                         return self._extract_videcom_flight_data(flight_element)
                 except Exception as e:
@@ -940,7 +970,7 @@ class ConcurrentAirlineScraper:
             self.logger.error(f"Error extracting flights table {table_id}: {e}")
             return []
 
-    def _extract_crane_flight_data(self, flight_element) -> Optional[Dict]:
+    def _extract_crane_flight_data(self, flight_element, airline_name) -> Optional[Dict]:
         """Extract Crane flight data using BeautifulSoup"""
         try:
             # Extract route blocks
@@ -966,8 +996,11 @@ class ConcurrentAirlineScraper:
             }
 
             # Process fares in parallel
-            fare_classes = ["ECONOMY", "BUSINESS"]
-            fare_elements = flight_element.select(".branded-fare-item")[:2]
+            fare_classes = ["ECONOMY", "PREMIUM", "BUSINESS"]
+            if airline_name == 'arikair':
+                fare_elements = flight_element.select(".fare-item")[:3]
+            else:
+                fare_elements = flight_element.select(".branded-fare-item")[:3]
 
             def process_fare(fare_element, index):
                 try:
@@ -976,8 +1009,15 @@ class ConcurrentAirlineScraper:
                         return None
 
                     # Extract price
-                    price_tag = (fare_element.select_one(".currency") or
-                                 fare_element.select_one(".currency-best-offer"))
+                    if airline_name == 'arikair':
+                        price_tag = (
+                                fare_element.select_one(".price-best-offer") or
+                                fare_element.select_one(".price-block")
+                        )
+                    else:
+                        price_tag = (fare_element.select_one(".currency") or
+                                     fare_element.select_one(".currency-best-offer"))
+
                     price = price_tag.text.strip() if price_tag else None
 
                     if price:
@@ -1063,7 +1103,7 @@ class ConcurrentAirlineScraper:
         """Fill Overland Airways search form"""
         try:
             # Set trip type
-            trip_type_select = WebDriverWait(driver, 5).until(
+            trip_type_select = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, ".flightType .comboHolder select"))
             )
 
@@ -1156,14 +1196,12 @@ class ConcurrentAirlineScraper:
                 self.logger.error(f"Error setting dates: {e}")
                 raise
 
-            time.sleep(2)
-
             # Set passengers
             passengers_input = WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.ID, "flightForm_passengers"))
             )
             passengers_input.click()
-            time.sleep(0.5)
+            wait(1, 2)
 
             # Set adults
             if config.adults > 1:
@@ -1238,16 +1276,15 @@ class ConcurrentAirlineScraper:
             self.logger.error(f"Error extracting Overland results: {e}")
             return None
 
-    def _extract_overland_flights_table(self, driver: webdriver.Chrome, table_id: str, label: str) -> List[Dict]:
-        """Extract flights from Overland table using BeautifulSoup"""
+    def _extract_overland_flights_table(self, driver, table_id: str, label: str) -> List[Dict]:
+        """Extract flights from Overland table with Selenium, BeautifulSoup, and concurrency"""
         try:
-            # Wait for table and get HTML
             table = WebDriverWait(driver, 20).until(
                 EC.presence_of_element_located((By.ID, table_id))
             )
-            table_html = table.get_attribute('outerHTML')
-            soup = BeautifulSoup(table_html, 'html.parser')
-            flight_elements = soup.select(".flightItemNew")
+
+            flights = table.find_elements(By.CLASS_NAME, "flightItemNew")
+            flight_list = []
 
             def process_flight(flight):
                 try:
@@ -1255,82 +1292,99 @@ class ConcurrentAirlineScraper:
                         "flight_number": None,
                         "departure": {"time": None, "city": None, "date": None},
                         "arrival": {"time": None, "city": None, "date": None},
-                        "duration": None,
-                        "type": None,
                         "price": None,
                         "status": None,
                         "fares": []
                     }
 
-                    # Extract flight number
-                    title_right = flight.select_one(".flightItem_titleRight")
-                    if title_right:
-                        flight_data["flight_number"] = title_right.select_one("strong").text.strip()
+                    # Use BeautifulSoup to parse the flight block
+                    soup = BeautifulSoup(flight.get_attribute("outerHTML"), "html.parser")
 
-                    # Extract departure info
-                    title_left = flight.select_one(".flightItem_titleLeft")
-                    if title_left:
-                        depart_time = title_left.select(".flightItem_titleTime")[0]
-                        flight_data["departure"]["time"] = depart_time.select_one("strong").text.strip()
-                        depart_info = depart_time.select_one("span").text.strip()
+                    # Flight number
+                    title_right = soup.select_one(".flightItem_titleRight strong")
+                    if title_right:
+                        flight_data["flight_number"] = title_right.text.strip()
+
+                    # Departure
+                    try:
+                        depart_block = soup.select(".flightItem_titleLeft .flightItem_titleTime")[0]
+                        flight_data["departure"]["time"] = depart_block.select_one("strong").text.strip()
+                        depart_info = depart_block.select_one("span").text.strip()
                         depart_date, depart_city = depart_info.split("|")
                         flight_data["departure"]["date"] = depart_date.strip()
                         flight_data["departure"]["city"] = depart_city.strip()
+                    except:
+                        pass
 
-                    # Extract arrival info
-                    if title_left:
-                        arrive_time = title_left.select(".flightItem_titleTime")[1]
-                        flight_data["arrival"]["time"] = arrive_time.select_one("strong").text.strip()
-                        arrive_info = arrive_time.select_one("span").text.strip()
+                    # Arrival
+                    try:
+                        arrive_block = soup.select(".flightItem_titleLeft .flightItem_titleTime")[1]
+                        flight_data["arrival"]["time"] = arrive_block.select_one("strong").text.strip()
+                        arrive_info = arrive_block.select_one("span").text.strip()
                         arrive_date, arrive_city = arrive_info.split("|")
                         flight_data["arrival"]["date"] = arrive_date.strip()
                         flight_data["arrival"]["city"] = arrive_city.strip()
+                    except:
+                        pass
 
-                    # Extract status and price
-                    status_element = flight.select_one(".flightBlockSelect")
-                    if status_element:
-                        status_text = status_element.text.strip()
-                        if "SOLD OUT" in status_text:
-                            flight_data["status"] = "NOT_AVAILABLE"
-                            flight_data["price"] = None
+                    # Status and price
+                    status_block = soup.select_one(".flightBlockSelect")
+                    status_text = status_block.text.strip() if status_block else ""
+                    if "SOLD OUT" in status_text:
+                        flight_data["status"] = "NOT_AVAILABLE"
+                        flight_data["price"] = None
+                    else:
+                        price_el = soup.select_one(".minPrice")
+                        if price_el:
+                            flight_data["price"] = price_el.text.strip()
+                            flight_data["status"] = "AVAILABLE"
                         else:
-                            price_element = flight.select_one(".minPrice")
-                            if price_element:
-                                flight_data["price"] = price_element.text.strip()
-                                flight_data["status"] = "AVAILABLE"
-                            else:
-                                flight_data["status"] = "PRICE_NOT_AVAILABLE"
-                                flight_data["price"] = None
+                            flight_data["status"] = "PRICE_NOT_AVAILABLE"
 
-                    # Extract fare details if available
+                    # Fares if available
                     if flight_data["status"] == "AVAILABLE":
-                        fare_boxes = flight.select(".flight-class__box")
-                        for fare in fare_boxes:
-                            if fare.get("data-bookable") == "true":
+                        try:
+                            expand_button = flight.find_element(By.CLASS_NAME, "js-flightItem_titleBtn__btn")
+                            driver.execute_script("arguments[0].click();", expand_button)
+                            wait(2, 3)
+
+                            container_id = expand_button.get_attribute("aria-controls")
+                            fare_container = WebDriverWait(driver, 5).until(
+                                EC.presence_of_element_located((By.ID, container_id))
+                            )
+
+                            fare_html = fare_container.get_attribute("outerHTML")
+                            fare_soup = BeautifulSoup(fare_html, "html.parser")
+
+                            fare_boxes = fare_soup.select(".flight-class__box[data-bookable='true']")
+                            for box in fare_boxes:
                                 try:
                                     fare_data = {
-                                        "type": fare.get("data-classname"),
-                                        "price": fare.select_one(".btn-class").text.strip()
+                                        "type": box.get("data-classname"),
+                                        "price": box.select_one(".btn-class").text.strip()
                                     }
                                     flight_data["fares"].append(fare_data)
                                 except:
                                     continue
+                        except Exception as fe:
+                            self.logger.warning(f"⚠️ Fare extraction failed: {fe}")
 
                     return flight_data
-
                 except Exception as e:
-                    self.logger.warning(f"Error processing flight: {e}")
+                    self.logger.warning(f"❌ Error processing flight: {e}")
                     return None
 
-            # Process flights in parallel
             with ThreadPoolExecutor(max_workers=8) as executor:
-                futures = [executor.submit(process_flight, flight) for flight in flight_elements]
-                flights = [result for result in (f.result() for f in as_completed(futures)) if result]
+                futures = [executor.submit(process_flight, f) for f in flights]
+                for future in as_completed(futures):
+                    result = future.result()
+                    if result:
+                        flight_list.append(result)
 
-            return flights
+            return flight_list
 
         except Exception as e:
-            self.logger.error(f"Error extracting Overland flights table: {e}")
+            self.logger.error(f"🔥 Error extracting Overland flights table: {e}")
             return []
 
 

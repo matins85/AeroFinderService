@@ -1,28 +1,41 @@
-# fly.toml app configuration file generated for aerofinderserver-patient-pine-8491 on 2025-06-06T04:37:29+01:00
+# fly.toml app configuration file generated for aerofinderserver on 2025-06-12T12:10:49+01:00
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'aerofinderserver-patient-pine-8491'
+app = 'aerofinderserver'
 primary_region = 'jnb'
 console_command = '/code/manage.py shell'
 
 [build]
 
 [env]
+  ALLOWED_HOST_FOUR = 'https://aerofinderserver.fly.dev'
+  ALLOWED_HOST_ONE = '0.0.0.0'
+  ALLOWED_HOST_THREE = 'localhost'
+  ALLOWED_HOST_TWO = 'aerofinderserver.fly.dev'
+  CAPCHA_KEY = '521dea917855ad1ece41ea36ba5824a0'
+  CHROMEDRIVER_PATH = '/usr/bin/chromedriver'
+  CHROME_BIN = '/usr/bin/google-chrome'
+  DEBUG = 'False'
+  ENVIRONMENT = 'development'
+  FRONTEND_URL = 'https://aerofinder-1eaz.onrender.com'
+  FRONT_END_ONE = 'http://localhost:8080'
+  FRONT_END_TWO = 'https://aerofinder-1eaz.onrender.com'
   PORT = '8000'
+  SECRET_KEY = 'dxbn!1)7h5^e%b0jiz!cfvfggrfr+#8(gzh+p)ol@t#eqj=5q-^q=dn68g'
+
+[processes]
+  app = 'daphne aerofinder.asgi:application --port 8000 --bind 0.0.0.0 -v2'
+  release = 'python3 manage.py migrate'
 
 [http_service]
   internal_port = 8000
   force_https = true
   auto_stop_machines = 'stop'
   auto_start_machines = true
-  min_machines_running = 2
+  min_machines_running = 4
   processes = ['app']
-
-[processes]
-  app = "daphne aerofinder.asgi:application --port 8000 --bind 0.0.0.0 -v2"
-  release = "python3 manage.py migrate"
 
 [[vm]]
   memory = '2gb'
