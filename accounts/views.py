@@ -209,6 +209,17 @@ class OptimizedWebDriverManager:
             "longitude": 3.3792,
             "accuracy": 100
         })
+        driver.execute_script("""
+            navigator.geolocation.getCurrentPosition = function(success){
+                success({
+                    coords: {
+                        latitude: 6.5244,
+                        longitude: 3.3792,
+                        accuracy: 100
+                    }
+                });
+            };
+        """)
 
         return driver
 
@@ -932,12 +943,6 @@ class ConcurrentAirlineScraper:
     def _extract_flights_table(self, driver: webdriver.Chrome, table_id: str, airline_type: str, airline_name: str) -> \
             List[Dict]:
         """Extract flights from table using BeautifulSoup and parallel processing"""
-
-        driver.execute_cdp_cmd("Emulation.setGeolocationOverride", {
-            "latitude": 6.5244,
-            "longitude": 3.3792,
-            "accuracy": 100
-        })
 
         try:
             # Wait for table to be present
