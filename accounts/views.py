@@ -4,6 +4,8 @@ import shutil
 import subprocess
 import random
 import re
+import json
+import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from enum import Enum
@@ -23,6 +25,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.http import HttpResponse
 import undetected_chromedriver as uc
+import tempfile
 
 
 def extract_airport_code(text):
@@ -101,17 +104,65 @@ class OptimizedWebDriverManager:
         self.proxy_ip = proxy_ip
         self.logger = logging.getLogger(__name__)
 
-    def create_driver(self, airline_name: str = None) -> webdriver.Chrome:
-        """Create optimized Chrome WebDriver"""
+    def create_proxy_auth_extension(self, proxy_host, proxy_port, proxy_user, proxy_pass):
+        """Creates a Chrome extension for proxy authentication"""
+        manifest_json = {
+            "version": "1.0.0",
+            "manifest_version": 2,
+            "name": "Proxy Auth Extension",
+            "permissions": [
+                "proxy", "tabs", "unlimitedStorage", "storage", "<all_urls>", "webRequest", "webRequestBlocking"
+            ],
+            "background": {
+                "scripts": ["background.js"]
+            }
+        }
+
+        background_js = f"""
+        var config = {{
+            mode: "fixed_servers",
+            rules: {{
+                singleProxy: {{
+                    scheme: "http",
+                    host: "{proxy_host}",
+                    port: parseInt({proxy_port})
+                }},
+                bypassList: ["localhost"]
+            }}
+        }};
+
+        chrome.proxy.settings.set({{value: config, scope: "regular"}}, function() {{}});
+
+        chrome.webRequest.onAuthRequired.addListener(
+            function(details) {{
+                return {{
+                    authCredentials: {{
+                        username: "{proxy_user}",
+                        password: "{proxy_pass}"
+                    }}
+                }};
+            }},
+            {{urls: ["<all_urls>"]}},
+            ["blocking"]
+        );
+        """
+
+        pluginfile = tempfile.mktemp(suffix='.zip')
+        with zipfile.ZipFile(pluginfile, 'w') as zp:
+            zp.writestr("manifest.json", json.dumps(manifest_json))
+            zp.writestr("background.js", background_js)
+
+        return pluginfile
+
+    def create_driver(self, airline_name: str = None, airline_type: str = None) -> webdriver.Chrome:
+        """Create optimized Chrome WebDriver with optional proxy per airline."""
         user_agent = UserAgent()
         options = uc.ChromeOptions()
 
-        # Create a unique user data directory for this instance
-        import tempfile
+        # Create a temporary user data directory for session isolation
         user_data_dir = tempfile.mkdtemp(prefix='chrome_user_data_')
         self.logger.info(f"Created unique Chrome user data directory: {user_data_dir}")
 
-        # Optimized Chrome options for better performance
         chrome_options = [
             f"--user-agent={user_agent.random}",
             "--no-sandbox",
@@ -139,25 +190,27 @@ class OptimizedWebDriverManager:
             f"--user-data-dir={user_data_dir}",
         ]
 
-        # Configure proxy based on airline
-        print(airline_name, 'airline_name')
-        if airline_name and airline_name.lower() == "airpeace" and self.proxy_ip:
-            # Use proxy for Air Peace
+        # Use proxy only for Air Peace
+        if airline_name and (airline_name.lower() == "airpeace" or airline_type == AirlineGroup.VIDECOM) and self.proxy_ip:
             username = "TP24838919"
             password = "hFRWnGOW"
             host = "208.195.161.231"
             port = 65095
-            proxy_server = f"http://{username}:{password}@{host}:{port}"
-            print(proxy_server, 'proxy_server')
-            chrome_options.extend([
-                f'--proxy-server={proxy_server}',
-                '--proxy-bypass-list=<-loopback>'
-            ])
+
+            proxy_extension_path = self.create_proxy_auth_extension(
+                proxy_host=host,
+                proxy_port=port,
+                proxy_user=username,
+                proxy_pass=password
+            )
+            options.add_extension(proxy_extension_path)
+            self.logger.info(f"Added proxy extension for Air Peace")
+            print("added proxt")
         else:
-            # Use direct connection for other airlines
+            # Bypass proxy
             chrome_options.extend([
-                '--proxy-server="direct://"',
-                '--proxy-bypass-list=*'
+                "--proxy-server='direct://'",
+                "--proxy-bypass-list=*"
             ])
 
         if self.headless:
@@ -167,8 +220,8 @@ class OptimizedWebDriverManager:
                 "--disable-web-security",
             ])
 
-        for option in chrome_options:
-            options.add_argument(option)
+        for opt in chrome_options:
+            options.add_argument(opt)
 
         # Performance preferences
         prefs = {
@@ -184,31 +237,32 @@ class OptimizedWebDriverManager:
         }
         options.add_experimental_option("prefs", prefs)
 
+        # Path to chromedriver
         chromedriver_path = os.environ.get("CHROMEDRIVER_PATH")
 
         try:
-            driver = uc.Chrome(driver_executable_path=chromedriver_path, options=options, headless=self.headless)
+            driver = uc.Chrome(
+                driver_executable_path=chromedriver_path,
+                options=options,
+                headless=self.headless
+            )
             self.logger.info("Successfully created Chrome driver")
         except Exception as e:
             self.logger.error(f"Failed to create Chrome driver: {e}")
-            try:
-                import shutil
-                shutil.rmtree(user_data_dir)
-            except:
-                pass
+            shutil.rmtree(user_data_dir, ignore_errors=True)
             raise
 
-        # Optimized timeouts
+        # Set timeouts
         driver.set_page_load_timeout(15)
         driver.implicitly_wait(5)
 
-        # Remove Selenium automation flag
+        # Evade detection
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-            "source": """
-            Object.defineProperty(navigator, 'webdriver', {get: () => undefined})
-            """
+            "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
         })
+
+        # Set location override (e.g., Lagos, Nigeria)
         driver.execute_cdp_cmd("Emulation.setGeolocationOverride", {
             "latitude": 6.5244,
             "longitude": 3.3792,
@@ -227,6 +281,7 @@ class OptimizedWebDriverManager:
         """)
 
         return driver
+
 
     def _create_service(self):
         """Create Chrome service compatible with Heroku (Chrome for Testing buildpack)"""
@@ -550,7 +605,7 @@ class ConcurrentAirlineScraper:
         try:
             # Create optimized driver with proxy IP and airline name
             driver_manager = OptimizedWebDriverManager(headless=True, proxy_ip=self.proxy_ip)
-            driver = driver_manager.create_driver(airline_config.key)
+            driver = driver_manager.create_driver(airline_config.key, airline_config.group)
 
             # Choose scraping strategy based on airline group
             if airline_config.group == AirlineGroup.CRANE_AERO:
@@ -597,7 +652,7 @@ class ConcurrentAirlineScraper:
                 if retries > 0:
                     print("♻️ Restarting browser session...")
                     driver.quit()
-                    driver = OptimizedWebDriverManager().create_driver(airline_config.key)
+                    driver = OptimizedWebDriverManager().create_driver(airline_config.key, airline_config.group)
 
                 driver.get(airline_config.url)
 
