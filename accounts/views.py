@@ -143,10 +143,10 @@ class OptimizedWebDriverManager:
         print(airline_name, 'airline_name')
         if airline_name and airline_name.lower() == "airpeace" and self.proxy_ip:
             # Use proxy for Air Peace
-            username = "tl-93b0d81e8022d99b2b48667355524de8b05714e62ca36c8cc33a916f03f9b999-country-ng-session-7555f"
-            password = "wwqip9rwn8dy"
-            host = "proxy.toolip.io"
-            port = 31111
+            username = "TP24838919"
+            password = "hFRWnGOW"
+            host = "208.195.161.231"
+            port = 65095
             proxy_server = f"http://{username}:{password}@{host}:{port}"
             print(proxy_server, 'proxy_server')
             chrome_options.extend([
