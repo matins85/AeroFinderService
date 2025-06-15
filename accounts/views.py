@@ -174,7 +174,7 @@ class OptimizedWebDriverManager:
             "--lang=en-NG",
             "--ignore-certificate-errors",
             "--allow-running-insecure-content",
-            "--disable-extensions",
+            # "--disable-extensions",
             "--start-maximized",
             "--disable-plugins",
             "--disable-images",
@@ -197,6 +197,7 @@ class OptimizedWebDriverManager:
             host = "208.195.161.231"
             port = 65095
 
+            self.logger.info(f"Adding proxy extension for Air Peace")
             proxy_extension_path = self.create_proxy_auth_extension(
                 proxy_host=host,
                 proxy_port=port,
