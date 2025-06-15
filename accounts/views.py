@@ -198,13 +198,18 @@ class OptimizedWebDriverManager:
             port = 65095
 
             self.logger.info(f"Adding proxy extension for Air Peace")
-            proxy_extension_path = self.create_proxy_auth_extension(
-                proxy_host=host,
-                proxy_port=port,
-                proxy_user=username,
-                proxy_pass=password
-            )
-            options.add_extension(proxy_extension_path)
+            # proxy_extension_path = self.create_proxy_auth_extension(
+            #     proxy_host=host,
+            #     proxy_port=port,
+            #     proxy_user=username,
+            #     proxy_pass=password
+            # )
+            # options.add_extension(proxy_extension_path)
+            proxy = f"http://{username}:{password}@{host}:{port}"
+            chrome_options.extend([
+                f"--proxy-server={proxy}",
+            ])
+
             self.logger.info(f"Added proxy extension for Air Peace")
         else:
             # Bypass proxy
