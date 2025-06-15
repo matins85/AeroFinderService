@@ -938,21 +938,77 @@ class ConcurrentAirlineScraper:
             self.logger.error(f"Error submitting Crane search: {e}")
 
     def _submit_videcom_search(self, driver: webdriver.Chrome):
-        """Submit Videcom search form"""
+        """Submit Videcom search form and handle reCAPTCHA if present"""
         try:
+            # Click the submit button
             submit_button = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.ID, "submitButton"))
             )
             submit_button.click()
 
-            # Wait for results
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.ID, "calView_0"))
-            )
-            time.sleep(3)
+            # Check if reCAPTCHA is present
+            try:
+                # Wait for either reCAPTCHA or results with a short timeout
+                WebDriverWait(driver, 5).until(
+                    lambda d: d.find_elements(By.CLASS_NAME, "g-recaptcha") or d.find_elements(By.ID, "calView_0")
+                )
+                
+                # If reCAPTCHA is present, handle it
+                if driver.find_elements(By.CLASS_NAME, "g-recaptcha"):
+                    recaptcha_element = driver.find_element(By.CLASS_NAME, "g-recaptcha")
+                    sitekey = recaptcha_element.get_attribute("data-sitekey")
+                    self.logger.info(f"Found reCAPTCHA with sitekey: {sitekey}")
+
+                    # Get current URL for captcha solving
+                    current_url = driver.current_url
+
+                    # Solve the captcha using 2Captcha
+                    solver = TwoCaptcha(os.getenv("CAPCHA_KEY"))
+                    try:
+                        result = solver.recaptcha(
+                            sitekey=sitekey,
+                            url=current_url
+                        )
+                        
+                        if result and 'code' in result:
+                            # Insert the solved captcha token
+                            token = result['code']
+                            self.logger.info("Successfully solved reCAPTCHA")
+                            
+                            # Execute JavaScript to set the token
+                            driver.execute_script(f"""
+                                document.querySelector('[id="g-recaptcha-response"]').innerText = '{token}';
+                            """)
+                            
+                            # Trigger the callback function
+                            driver.execute_script("recaptchaCallback(arguments[0]);", token)
+                            
+                            # Wait for results after captcha submission
+                            WebDriverWait(driver, 15).until(
+                                EC.presence_of_element_located((By.ID, "calView_0"))
+                            )
+                            time.sleep(3)
+                        else:
+                            raise Exception("Failed to get captcha solution")
+                            
+                    except Exception as e:
+                        self.logger.error(f"Error solving reCAPTCHA: {str(e)}")
+                        raise
+                else:
+                    # No reCAPTCHA found, just wait for results
+                    self.logger.info("No reCAPTCHA found, proceeding with search")
+                    WebDriverWait(driver, 15).until(
+                        EC.presence_of_element_located((By.ID, "calView_0"))
+                    )
+                    time.sleep(3)
+
+            except Exception as e:
+                self.logger.error(f"Error handling search submission: {str(e)}")
+                raise
 
         except Exception as e:
             self.logger.error(f"Error submitting Videcom search: {e}")
+            raise
 
     def _extract_crane_results_optimized(self, driver: webdriver.Chrome, trip_type: TripType,
                                          airline_name) -> Dict:
