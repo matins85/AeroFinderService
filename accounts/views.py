@@ -205,7 +205,6 @@ class OptimizedWebDriverManager:
             )
             options.add_extension(proxy_extension_path)
             self.logger.info(f"Added proxy extension for Air Peace")
-            print("added proxt")
         else:
             # Bypass proxy
             chrome_options.extend([
