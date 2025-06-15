@@ -96,21 +96,15 @@ AIRLINES_CONFIG = [
 class OptimizedWebDriverManager:
     """Optimized WebDriver manager with better resource management"""
 
-    def __init__(self, headless: bool = True):
+    def __init__(self, headless: bool = True, proxy_ip: str = None):
         self.headless = headless
+        self.proxy_ip = proxy_ip
         self.logger = logging.getLogger(__name__)
 
-    def create_driver(self) -> webdriver.Chrome:
+    def create_driver(self, airline_name: str = None) -> webdriver.Chrome:
         """Create optimized Chrome WebDriver"""
         user_agent = UserAgent()
-        # options = Options()
         options = uc.ChromeOptions()
-
-        # ✅ Heroku Chrome binary (important for headless Chrome in dynos)
-        # chrome_binary = os.environ.get("CHROME_BIN")
-        # if chrome_binary:
-        #     options.binary_location = chrome_binary
-        #     self.logger.info(f"Using CHROME_BIN: {chrome_binary}")
 
         # Create a unique user data directory for this instance
         import tempfile
@@ -134,8 +128,6 @@ class OptimizedWebDriverManager:
             "--disable-plugins",
             "--disable-images",
             "--disable-css",
-            '--proxy-server="direct://"',
-            "--proxy-bypass-list=*",
             "--disable-logging",
             "--disable-dev-tools",
             "--disable-background-timer-throttling",
@@ -144,8 +136,29 @@ class OptimizedWebDriverManager:
             "--disable-features=TranslateUI",
             "--disable-default-apps",
             "--disable-sync",
-            f"--user-data-dir={user_data_dir}",  # Add unique user data directory
+            f"--user-data-dir={user_data_dir}",
         ]
+
+        # Configure proxy based on airline
+        print(airline_name, 'airline_name')
+        if airline_name and airline_name.lower() == "airpeace" and self.proxy_ip:
+            # Use proxy for Air Peace
+            username = "tl-93b0d81e8022d99b2b48667355524de8b05714e62ca36c8cc33a916f03f9b999-country-ng-session-7555f"
+            password = "wwqip9rwn8dy"
+            host = "proxy.toolip.io"
+            port = 31111
+            proxy_server = f"http://{username}:{password}@{host}:{port}"
+            print(proxy_server, 'proxy_server')
+            chrome_options.extend([
+                f'--proxy-server={proxy_server}',
+                '--proxy-bypass-list=<-loopback>'
+            ])
+        else:
+            # Use direct connection for other airlines
+            chrome_options.extend([
+                '--proxy-server="direct://"',
+                '--proxy-bypass-list=*'
+            ])
 
         if self.headless:
             chrome_options.extend([
@@ -170,22 +183,14 @@ class OptimizedWebDriverManager:
             "intl.accept_languages": "en-NG,en"
         }
         options.add_experimental_option("prefs", prefs)
-        # options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        # options.add_experimental_option('useAutomationExtension', False)
 
-        # Use your updated Heroku-aware _create_service()
-        # service = self._create_service()
         chromedriver_path = os.environ.get("CHROMEDRIVER_PATH")
 
         try:
-            # driver = webdriver.Chrome(service=service, options=options)
-            # driver = uc.Chrome(service=service, options=options, headless=self.headless)
             driver = uc.Chrome(driver_executable_path=chromedriver_path, options=options, headless=self.headless)
-
             self.logger.info("Successfully created Chrome driver")
         except Exception as e:
             self.logger.error(f"Failed to create Chrome driver: {e}")
-            # Clean up the temporary directory if driver creation fails
             try:
                 import shutil
                 shutil.rmtree(user_data_dir)
@@ -478,8 +483,9 @@ class OptimizedCloudflareHandler:
 class ConcurrentAirlineScraper:
     """Main scraper class that handles all airline types concurrently"""
 
-    def __init__(self, max_workers: int = 9):
+    def __init__(self, max_workers: int = 9, proxy_ip: str = None):
         self.max_workers = max_workers
+        self.proxy_ip = proxy_ip
         self.logger = logging.getLogger(__name__)
         self.cloudflare_handler = OptimizedCloudflareHandler()
 
@@ -542,9 +548,9 @@ class ConcurrentAirlineScraper:
         start_time = time.time()
 
         try:
-            # Create optimized driver
-            driver_manager = OptimizedWebDriverManager(headless=True)
-            driver = driver_manager.create_driver()
+            # Create optimized driver with proxy IP and airline name
+            driver_manager = OptimizedWebDriverManager(headless=True, proxy_ip=self.proxy_ip)
+            driver = driver_manager.create_driver(airline_config.key)
 
             # Choose scraping strategy based on airline group
             if airline_config.group == AirlineGroup.CRANE_AERO:
@@ -591,7 +597,7 @@ class ConcurrentAirlineScraper:
                 if retries > 0:
                     print("♻️ Restarting browser session...")
                     driver.quit()
-                    driver = OptimizedWebDriverManager().create_driver()
+                    driver = OptimizedWebDriverManager().create_driver(airline_config.key)
 
                 driver.get(airline_config.url)
 
@@ -1408,12 +1414,12 @@ class SearchAirLineView(APIView):
 
     def __init__(self):
         super().__init__()
-        self.scraper = ConcurrentAirlineScraper(max_workers=9)  # Optimized for 9 airlines
         self.logger = logging.getLogger(__name__)
 
     def get(self, request):
         # Get airline parameter from query params
         airline = request.query_params.get('airline', None)
+        proxy_ip = request.query_params.get('proxyIP', None)
 
         # Create search config from query parameters
         search_config = self._create_search_config(request.query_params)
@@ -1421,8 +1427,10 @@ class SearchAirLineView(APIView):
             return Response({"error": "Invalid search parameters"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
+            # Create scraper with proxy IP
+            scraper = ConcurrentAirlineScraper(max_workers=9, proxy_ip=proxy_ip)
             # Perform search with optional airline filter
-            results = self.scraper.search_all_airlines(search_config, airline)
+            results = scraper.search_all_airlines(search_config, airline)
             formatted_results = self._format_search_results(results, search_config)
             return Response(formatted_results)
         except Exception as e:
@@ -1432,15 +1440,18 @@ class SearchAirLineView(APIView):
     def post(self, request):
         # Get airline parameter from request data
         airline = request.data.get('airline', None)
+        proxy_ip = request.data.get('proxyIP', None)
 
         try:
-            results = self._perform_search(request)
+            # Create scraper with proxy IP
+            scraper = ConcurrentAirlineScraper(max_workers=9, proxy_ip=proxy_ip)
+            results = self._perform_search(request, scraper)
             return Response(results)
         except Exception as e:
             self.logger.error(f"Error in POST request: {str(e)}")
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    def _perform_search(self, request):
+    def _perform_search(self, request, scraper):
         search_config = self._create_search_config(request.data)
         if not search_config:
             raise ValueError("Invalid search parameters")
@@ -1449,7 +1460,7 @@ class SearchAirLineView(APIView):
         airline = request.data.get('airline', None)
 
         # Perform search with optional airline filter
-        results = self.scraper.search_all_airlines(search_config, airline)
+        results = scraper.search_all_airlines(search_config, airline)
         return self._format_search_results(results, search_config)
 
     def _create_search_config(self, params) -> Optional[FlightSearchConfig]:

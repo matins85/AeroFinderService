@@ -60,8 +60,9 @@ class FlightSearchConsumer(AsyncWebsocketConsumer):
     async def _start_search(self, search_config):
         """Start the flight search process and stream results"""
         try:
-            # Create scraper instance
-            scraper = ConcurrentAirlineScraper()
+            # Create scraper instance with proxy IP
+            proxy_ip = search_config.get('proxyIP')
+            scraper = ConcurrentAirlineScraper(proxy_ip=proxy_ip)
 
             # Get airline filter if specified
             airline = search_config.get('airline')
@@ -255,6 +256,7 @@ class FlightSearchConsumer(AsyncWebsocketConsumer):
             children = int(data.get('children', 0))
             infants = int(data.get('infants', 0))
             airline = data.get('airline')
+            proxy_ip = data.get('proxyIP')  # Get the proxy IP from the data
 
             # Validate passenger counts
             if adults < 1 or adults > 9:
@@ -273,7 +275,8 @@ class FlightSearchConsumer(AsyncWebsocketConsumer):
                 'adults': adults,
                 'children': children,
                 'infants': infants,
-                'airline': airline
+                'airline': airline,
+                'proxyIP': proxy_ip  # Include the proxy IP in the returned config
             }
 
         except (ValueError, TypeError) as e:
