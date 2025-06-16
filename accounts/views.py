@@ -157,7 +157,13 @@ class OptimizedWebDriverManager:
     def create_driver(self, airline_name: str = None, airline_type: str = None) -> webdriver.Chrome:
         """Create optimized Chrome WebDriver with optional proxy per airline."""
         user_agent = UserAgent()
-        options = uc.ChromeOptions()
+        # options = uc.ChromeOptions()
+        options = Options()
+
+        chrome_binary = os.environ.get("CHROME_BIN")
+        if chrome_binary:
+            options.binary_location = chrome_binary
+            self.logger.info(f"Using CHROME_BIN: {chrome_binary}")
 
         # Create a temporary user data directory for session isolation
         user_data_dir = tempfile.mkdtemp(prefix='chrome_user_data_')
@@ -174,7 +180,7 @@ class OptimizedWebDriverManager:
             "--lang=en-NG",
             "--ignore-certificate-errors",
             "--allow-running-insecure-content",
-            # "--disable-extensions",
+            "--disable-extensions",
             "--start-maximized",
             "--disable-plugins",
             "--disable-images",
@@ -192,25 +198,30 @@ class OptimizedWebDriverManager:
 
         # Use proxy only for Air Peace
         if airline_name and (airline_name.lower() == "airpeace" or airline_type == AirlineGroup.VIDECOM) and self.proxy_ip:
-            username = "TP24838919"
-            password = "hFRWnGOW"
-            host = "208.195.161.231"
-            port = 65095
-
-            self.logger.info(f"Adding proxy extension for Air Peace")
-            # proxy_extension_path = self.create_proxy_auth_extension(
-            #     proxy_host=host,
-            #     proxy_port=port,
-            #     proxy_user=username,
-            #     proxy_pass=password
-            # )
-            # options.add_extension(proxy_extension_path)
-            proxy = f"http://{username}:{password}@{host}:{port}"
             chrome_options.extend([
-                f"--proxy-server={proxy}",
+                "--proxy-server='direct://'",
+                "--proxy-bypass-list=*"
             ])
+            # username = "TP24838919"
+            # password = "hFRWnGOW"
+            # host = "208.195.161.231"
+            # port = 65095
 
-            self.logger.info(f"Added proxy extension for Air Peace")
+            # self.logger.info(f"Adding proxy extension for Air Peace")
+            # # proxy_extension_path = self.create_proxy_auth_extension(
+            # #     proxy_host=host,
+            # #     proxy_port=port,
+            # #     proxy_user=username,
+            # #     proxy_pass=password
+            # # )
+            # # options.add_extension(proxy_extension_path)
+            # proxy = f"http://{username}:{password}@{host}:{port}"
+            # chrome_options.extend([
+            #     f"--proxy-server={proxy}",
+            # ])
+            # print("Added proxy extension for Air Peace")
+
+            # self.logger.info(f"Added proxy extension for Air Peace")
         else:
             # Bypass proxy
             chrome_options.extend([
@@ -241,16 +252,19 @@ class OptimizedWebDriverManager:
             "intl.accept_languages": "en-NG,en"
         }
         options.add_experimental_option("prefs", prefs)
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
 
         # Path to chromedriver
-        chromedriver_path = os.environ.get("CHROMEDRIVER_PATH")
-
+        # chromedriver_path = os.environ.get("CHROMEDRIVER_PATH")
+        service = self._create_service()
         try:
-            driver = uc.Chrome(
-                driver_executable_path=chromedriver_path,
-                options=options,
-                headless=self.headless
-            )
+            # driver = uc.Chrome(
+            #     driver_executable_path=chromedriver_path,
+            #     options=options,
+            #     headless=self.headless
+            # )
+            driver = webdriver.Chrome(service=service, options=options)
             self.logger.info("Successfully created Chrome driver")
         except Exception as e:
             self.logger.error(f"Failed to create Chrome driver: {e}")
