@@ -574,28 +574,33 @@ class ConcurrentAirlineScraper:
         self.logger = logging.getLogger(__name__)
         self.cloudflare_handler = OptimizedCloudflareHandler()
 
-    def search_all_airlines(self, search_config: FlightSearchConfig, airline: Optional[str] = None) -> Dict:
+    def search_all_airlines(self, search_config: FlightSearchConfig, airline: Optional[str] = None, airlines: Optional[list] = None) -> Dict:
         """
         Search flights across all airlines concurrently
         Args:
             search_config: Flight search configuration
             airline: Optional airline name to filter results (e.g., "airpeace", "arikair", etc.)
+            airlines: Optional list of airline keys to filter results (e.g., ["airpeace", "arikair"])
         Returns:
             Dictionary containing flight results from all airlines
         """
         results = {}
         self.logger.info("Starting concurrent airline search...")
 
+        # Determine which airlines to search
+        if airlines and isinstance(airlines, list) and len(airlines) > 0:
+            airlines_to_search = [config for config in AIRLINES_CONFIG if config.key in [a.lower() for a in airlines]]
+        elif airline:
+            airlines_to_search = [config for config in AIRLINES_CONFIG if config.key == airline.lower()]
+        else:
+            airlines_to_search = AIRLINES_CONFIG
+
+        if not airlines_to_search:
+            self.logger.warning(f"No airlines found matching '{airline or airlines}'")
+            return {"error": f"No airlines found matching '{airline or airlines}'"}
+
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            # Filter airlines if specific airline is requested
-            airlines_to_search = [config for config in AIRLINES_CONFIG if not airline or config.key == airline.lower()]
-
-            if not airlines_to_search:
-                self.logger.warning(f"No airlines found matching '{airline}'")
-                return {"error": f"No airlines found matching '{airline}'"}
-
             self.logger.info(f"Searching {len(airlines_to_search)} airlines concurrently")
-
             future_to_airline = {
                 executor.submit(self._search_single_airline, airline_config, search_config): airline_config
                 for airline_config in airlines_to_search
