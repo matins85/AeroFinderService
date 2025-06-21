@@ -56,6 +56,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Create app directory
 WORKDIR /code
 
+# Set Nigeria locale and timezone
+RUN apt-get update && apt-get install -y \
+    locales tzdata \
+    && echo "en_NG.UTF-8 UTF-8" > /etc/locale.gen \
+    && locale-gen en_NG.UTF-8 \
+    && update-locale LANG=en_NG.UTF-8 \
+    && ln -sf /usr/share/zoneinfo/Africa/Lagos /etc/localtime \
+    && dpkg-reconfigure -f noninteractive tzdata
+
+ENV LANG=en_NG.UTF-8 \
+    LANGUAGE=en_NG:en \
+    LC_ALL=en_NG.UTF-8 \
+    TZ=Africa/Lagos
+
 # Install Chrome dependencies and ChromeDriver
 RUN apt-get update && apt-get install -y \
     unzip wget curl gnupg \

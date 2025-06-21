@@ -19,6 +19,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.common.exceptions import TimeoutException, StaleElementReferenceException, ElementNotInteractableException
 from twocaptcha import TwoCaptcha, TimeoutException
 from rest_framework import status
 from rest_framework.views import APIView
@@ -49,6 +50,8 @@ class AirlineGroup(Enum):
     CRANE_AERO = "crane_aero"
     VIDECOM = "videcom"
     OVERLAND = "overland"  # New airline group
+    VALUEJET = "valuejet"  # ValueJet airline group
+    GREENAFRICA = "greenafrica"  # Green Africa airline group
 
 
 @dataclass
@@ -73,7 +76,7 @@ class AirlineConfig:
     key: str  # Key for response dict
 
 
-# Airline configurations - All 9 airlines
+# Airline configurations - All 12 airlines
 AIRLINES_CONFIG = [
     # Crane.aero based airlines (5 airlines)
     AirlineConfig("Air Peace", "https://book-airpeace.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "airpeace"),
@@ -93,6 +96,12 @@ AIRLINES_CONFIG = [
 
     # Overland Airways
     AirlineConfig("Overland Airways", "https://www.overlandairways.com/", AirlineGroup.OVERLAND, "overland"),
+    
+    # ValueJet Airways
+    AirlineConfig("ValueJet", "https://flyvaluejet.com/booking", AirlineGroup.VALUEJET, "valuejet"),
+    
+    # Green Africa Airways
+    AirlineConfig("Green Africa", "https://greenafrica.com", AirlineGroup.GREENAFRICA, "greenafrica"),
 ]
 
 
@@ -194,18 +203,20 @@ class OptimizedWebDriverManager:
             "--disable-default-apps",
             "--disable-sync",
             f"--user-data-dir={user_data_dir}",
+            "--proxy-server='direct://'",
+            "--proxy-bypass-list=*"
         ]
 
         # Use proxy only for Air Peace
-        if airline_name and (airline_name.lower() == "airpeace" or airline_type == AirlineGroup.VIDECOM) and self.proxy_ip:
-            chrome_options.extend([
-                "--proxy-server='direct://'",
-                "--proxy-bypass-list=*"
-            ])
-            # username = "TP24838919"
-            # password = "hFRWnGOW"
-            # host = "208.195.161.231"
-            # port = 65095
+        # if airline_name and (airline_name.lower() == "airpeace" or airline_type == AirlineGroup.VIDECOM) and self.proxy_ip:
+        #     chrome_options.extend([
+        #         "--proxy-server='direct://'",
+        #         "--proxy-bypass-list=*"
+        #     ])
+        #     # username = "TP24838919"
+        #     # password = "hFRWnGOW"
+        #     # host = "208.195.161.231"
+        #     # port = 65095
 
             # self.logger.info(f"Adding proxy extension for Air Peace")
             # # proxy_extension_path = self.create_proxy_auth_extension(
@@ -222,12 +233,12 @@ class OptimizedWebDriverManager:
             # print("Added proxy extension for Air Peace")
 
             # self.logger.info(f"Added proxy extension for Air Peace")
-        else:
-            # Bypass proxy
-            chrome_options.extend([
-                "--proxy-server='direct://'",
-                "--proxy-bypass-list=*"
-            ])
+        # else:
+        #     # Bypass proxy
+        #     chrome_options.extend([
+        #         "--proxy-server='direct://'",
+        #         "--proxy-bypass-list=*"
+        #     ])
 
         if self.headless:
             chrome_options.extend([
@@ -557,7 +568,7 @@ class OptimizedCloudflareHandler:
 class ConcurrentAirlineScraper:
     """Main scraper class that handles all airline types concurrently"""
 
-    def __init__(self, max_workers: int = 9, proxy_ip: str = None):
+    def __init__(self, max_workers: int = 12, proxy_ip: str = None):
         self.max_workers = max_workers
         self.proxy_ip = proxy_ip
         self.logger = logging.getLogger(__name__)
@@ -633,6 +644,10 @@ class ConcurrentAirlineScraper:
                 flight_data = self._scrape_videcom_airline(driver, airline_config, search_config)
             elif airline_config.group == AirlineGroup.OVERLAND:
                 flight_data = self._scrape_overland_airline(driver, airline_config, search_config)
+            elif airline_config.group == AirlineGroup.VALUEJET:
+                flight_data = self._scrape_valuejet_airline(driver, airline_config, search_config)
+            elif airline_config.group == AirlineGroup.GREENAFRICA:
+                flight_data = self._scrape_greenafrica_airline(driver, airline_config, search_config)
             else:
                 raise ValueError(f"Unknown airline group: {airline_config.group}")
 
@@ -757,6 +772,56 @@ class ConcurrentAirlineScraper:
 
         except Exception as e:
             self.logger.error(f"Overland scraping error: {e}")
+            return None
+
+    def _scrape_valuejet_airline(self, driver: webdriver.Chrome, airline_config: AirlineConfig,
+                                 search_config: FlightSearchConfig) -> Optional[Dict]:
+        """Scrape ValueJet Airways flights"""
+        try:
+            self.logger.info(f"🔍 Searching {airline_config.name}...")
+            driver.get(airline_config.url)
+
+            # Wait for the page to be fully loaded
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+
+            # Fill form efficiently
+            self._fill_valuejet_form(driver, search_config)
+
+            # Submit and wait for results
+            self._submit_valuejet_search(driver)
+
+            # Extract results
+            return self._extract_valuejet_results(driver, search_config.trip_type)
+
+        except Exception as e:
+            self.logger.error(f"ValueJet scraping error: {e}")
+            return None
+
+    def _scrape_greenafrica_airline(self, driver: webdriver.Chrome, airline_config: AirlineConfig,
+                                     search_config: FlightSearchConfig) -> Optional[Dict]:
+        """Scrape Green Africa Airways flights"""
+        try:
+            self.logger.info(f"🔍 Searching {airline_config.name}...")
+            driver.get(airline_config.url)
+
+            # Wait for the page to be fully loaded
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+
+            # Fill form efficiently
+            self._fill_greenafrica_form(driver, search_config)
+
+            # Submit and wait for results
+            self._submit_greenafrica_search(driver)
+
+            # Extract results
+            return self._extract_greenafrica_results(driver, search_config.trip_type)
+
+        except Exception as e:
+            self.logger.error(f"Green Africa scraping error: {e}")
             return None
 
     def _fill_crane_form_optimized(self, driver: webdriver.Chrome, config: FlightSearchConfig):
@@ -1538,6 +1603,937 @@ class ConcurrentAirlineScraper:
             self.logger.error(f"🔥 Error extracting Overland flights table: {e}")
             return []
 
+    def _fill_valuejet_form(self, driver: webdriver.Chrome, config: FlightSearchConfig):
+        """Fill ValueJet Airways search form"""
+        try:
+            # Select trip type
+            print(f"[+] Setting trip type to {config.trip_type.value}...")
+            try:
+                if config.trip_type == TripType.ONE_WAY:
+                    one_way_label = WebDriverWait(driver, 5).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, "label[data-testid='oneway-label']"))
+                    )
+                    one_way_label.click()
+                else:
+                    round_trip_label = WebDriverWait(driver, 5).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, "label[data-testid='round-trip-label']"))
+                    )
+                    round_trip_label.click()
+                
+            except Exception as e:
+                self.logger.error(f"Error selecting trip type: {e}")
+                raise
+
+            wait(1, 2)
+
+            # Select departure city
+            print("[+] Selecting departure city...")
+            try:
+                departure_dropdown = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "select[data-testid='departure-airport-dropdown-mobile']"))
+                )
+                
+                departure_code = extract_airport_code(config.departure_city)
+                js_script = f"""
+                    var select = arguments[0];
+                    var options = select.options;
+                    for(var i = 0; i < options.length; i++) {{
+                        if(options[i].value === '{departure_code}') {{
+                            select.selectedIndex = i;
+                            select.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                            break;
+                        }}
+                    }}
+                """
+                driver.execute_script(js_script, departure_dropdown)
+                
+            except Exception as e:
+                self.logger.error(f"Error selecting departure city: {e}")
+                raise
+
+            wait(1, 2)
+
+            # Select arrival city
+            print("[+] Selecting arrival city...")
+            try:
+                arrival_dropdown = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "select[data-testid='arrival-airport-dropdown-mobile']"))
+                )
+                
+                arrival_code = extract_airport_code(config.arrival_city)
+                js_script = f"""
+                    var select = arguments[0];
+                    var options = select.options;
+                    for(var i = 0; i < options.length; i++) {{
+                        if(options[i].value === '{arrival_code}') {{
+                            select.selectedIndex = i;
+                            select.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                            break;
+                        }}
+                    }}
+                """
+                driver.execute_script(js_script, arrival_dropdown)
+                
+            except Exception as e:
+                self.logger.error(f"Error selecting arrival city: {e}")
+                raise
+
+            # Set departure date
+            print("[+] Setting departure date...")
+            try:
+                departure_date_input = WebDriverWait(driver, 5).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "input.p-inputtext[placeholder*='Departure Date']"))
+                )
+                departure_date_input.click()
+
+                WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "div.p-datepicker.p-component"))
+                )
+
+                # Convert date format from "dd MMM yyyy" to "dd/MM/yyyy"
+                dep_date_parts = config.departure_date.split()
+                dep_month = {
+                    'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04', 'May': '05', 'Jun': '06',
+                    'Jul': '07', 'Aug': '08', 'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
+                }[dep_date_parts[1]]
+                dep_date = f"{dep_date_parts[0]}/{dep_month}/{dep_date_parts[2]}"
+                
+                day, month, year = dep_date.split("/")
+                day = str(int(day))  # Remove leading zeros
+                
+                month_names = {
+                    "01": "January", "02": "February", "03": "March", "04": "April",
+                    "05": "May", "06": "June", "07": "July", "08": "August",
+                    "09": "September", "10": "October", "11": "November", "12": "December"
+                }
+                
+                target_month = month_names[month]
+                
+                # Select departure date in calendar
+                if not self._select_date_in_calendar(driver, day, target_month, year):
+                    raise Exception(f"Could not select departure date {day} {target_month}")
+
+                # Select return date if round trip
+                if config.trip_type == TripType.ROUND_TRIP:
+                    ret_date_parts = config.return_date.split()
+                    ret_month = {
+                        'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04', 'May': '05', 'Jun': '06',
+                        'Jul': '07', 'Aug': '08', 'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
+                    }[ret_date_parts[1]]
+                    ret_date = f"{ret_date_parts[0]}/{ret_month}/{ret_date_parts[2]}"
+                    
+                    ret_day, ret_month, ret_year = ret_date.split("/")
+                    ret_day = str(int(ret_day))
+                    target_month = month_names[ret_month]
+                    
+                    if not self._select_date_in_calendar(driver, ret_day, target_month, ret_year):
+                        raise Exception(f"Could not select return date {ret_day} {target_month}")
+
+                # Click outside to close the datepicker
+                driver.find_element(By.TAG_NAME, "body").click()
+                
+            except Exception as e:
+                self.logger.error(f"Error setting departure date: {e}")
+                raise
+
+            # Set passenger counts
+            print("[+] Setting passenger counts...")
+            try:
+                passenger_dropdown = WebDriverWait(driver, 5).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "div[data-testid='passenger-selection-dropdown']"))
+                )
+                passenger_dropdown.click()
+                
+                # Set adults
+                if config.adults > 1:
+                    for _ in range(config.adults - 1):
+                        adult_plus = WebDriverWait(driver, 5).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, "svg[data-testid='add-adult']"))
+                        )
+                        adult_plus.click()
+                
+                # Set children
+                if config.children > 0:
+                    for _ in range(config.children):
+                        child_plus = WebDriverWait(driver, 5).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, "svg[data-testid='add-child']"))
+                        )
+                        child_plus.click()
+                
+                # Set infants
+                if config.infants > 0:
+                    for _ in range(config.infants):
+                        infant_plus = WebDriverWait(driver, 10).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, "svg[data-testid='add-infant']"))
+                        )
+                        infant_plus.click()
+                
+                # Click outside to close the dropdown
+                driver.find_element(By.TAG_NAME, "body").click()
+                wait(0.5, 1)
+                
+            except Exception as e:
+                self.logger.error(f"Error setting passenger counts: {e}")
+                raise
+
+        except Exception as e:
+            self.logger.error(f"Error filling ValueJet form: {e}")
+            raise
+
+    def _select_date_in_calendar(self, driver, target_day, target_month, target_year):
+        """Helper method to select date in ValueJet calendar"""
+        for _ in range(24):  # Prevent infinite loop, max 2 years
+            month_buttons = driver.find_elements(By.CSS_SELECTOR, "button.p-datepicker-month[data-pc-section='monthtitle']")
+            if len(month_buttons) >= 2:
+                left_month = month_buttons[0].text.strip()
+                right_month = month_buttons[1].text.strip()
+                
+                if target_month in [left_month, right_month]:
+                    date_cells = driver.find_elements(By.CSS_SELECTOR, "td[data-pc-section='day'] span:not(.p-disabled)")
+                    
+                    for cell in date_cells:
+                        if cell.text.strip() == target_day:
+                            driver.execute_script("arguments[0].click();", cell)
+                            wait(1, 2)
+                            return True
+                    break
+                else:
+                    next_buttons = driver.find_elements(By.CSS_SELECTOR, "button.p-datepicker-next[data-pc-section='nextbutton']")
+                    if next_buttons:
+                        driver.execute_script("arguments[0].click();", next_buttons[-1])
+                        wait(1, 2)
+                    else:
+                        break
+            else:
+                break
+        return False
+
+    def _submit_valuejet_search(self, driver: webdriver.Chrome):
+        """Submit ValueJet search form"""
+        try:
+            search_button = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "button[data-testid='search-flights']"))
+            )
+            search_button.click()
+            
+            # Wait for search results to load
+            print("[+] Waiting for search results to load...")
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.ID, "outbound"))
+            )
+            
+            # Wait for flight details element to be present
+            print("[+] Waiting for flight details to load...")
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "div.flex.flex-col.w-full.border.border-gray-200.rounded-lg.lg\\:pb-4.mb-4"))
+            )
+            
+            # Additional wait to ensure all content is loaded
+            wait(3, 4)
+            
+        except Exception as e:
+            self.logger.error(f"Error during ValueJet search: {e}")
+            raise
+
+    def _extract_valuejet_results(self, driver: webdriver.Chrome, trip_type: TripType) -> Dict:
+        """Extract ValueJet flight results"""
+        try:
+            results = {}
+            
+            # Extract departure flights
+            print("[+] Extracting departure flights...")
+            try:
+                outbound_container = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.ID, "outbound"))
+                )
+                
+                flight_details = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "div.flex.flex-col.w-full.border.border-gray-200.rounded-lg.lg\\:pb-4.mb-4"))
+                )
+                
+                if not flight_details:
+                    self.logger.warning("Flight details not found in outbound container")
+                    return None
+                    
+                departure_flights = self._extract_valuejet_flights_table(driver, outbound_container, "departure")
+                if departure_flights is None:
+                    return None
+                results['departure'] = departure_flights
+
+                # Extract return flights if round trip
+                if trip_type == TripType.ROUND_TRIP:
+                    print("[+] Extracting return flights...")
+                    inbound_container = WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.ID, "inbound"))
+                    )
+                    
+                    return_flights = self._extract_valuejet_flights_table(driver, inbound_container, "return")
+                    if return_flights is None:
+                        return None
+                    results['return'] = return_flights
+
+                return results
+
+            except Exception as e:
+                self.logger.error(f"Error extracting ValueJet flight information: {e}")
+                return None
+
+        except Exception as e:
+            self.logger.error(f"Error in ValueJet results extraction: {e}")
+            return None
+
+    def _extract_valuejet_flights_table(self, driver, container, label: str) -> List[Dict]:
+        """Extract flights from ValueJet table with ThreadPool"""
+        try:
+            flight_items = container.find_elements(By.CSS_SELECTOR, "div.flex.flex-col.w-full.border.border-gray-200.rounded-lg")
+            if not flight_items:
+                self.logger.warning(f"No flight items found for {label}")
+                return []
+
+            all_flights_data = []
+            panel_htmls_to_parse = []
+
+            # 1. Iterate through flights, extract basic info, click for fares, and collect panel HTML
+            for idx, flight_element in enumerate(flight_items):
+                flight_data = {
+                    'flight_number': None,
+                    'departure': {'time': None, 'city': None, 'date': None},
+                    'arrival': {'time': None, 'city': None, 'date': None},
+                    'fares': []
+                }
+                
+                # Use BeautifulSoup for reliable text extraction
+                flight_html = flight_element.get_attribute('outerHTML')
+                soup = BeautifulSoup(flight_html, 'html.parser')
+                
+                # Extract departure and arrival info
+                dep_info = soup.select_one("span.flex.basis-1.flex-col.pb-1")
+                arr_info = soup.select_one("span.flex.basis-1.flex-col.items-end.pb-1")
+                
+                if dep_info:
+                    dep_city_raw = dep_info.select_one("span.text-sm.font-normal").decode_contents().strip()
+                    flight_data['departure']['city'] = re.split('<br.*?>', dep_city_raw)[0].strip()
+                    dep_time = dep_info.select_one("span.text-primary.text-2xl.font-semibold").get_text(strip=True)
+                    dep_ampm = dep_info.select_one("span.text-sm.font-semibold").get_text(strip=True)
+                    flight_data['departure']['time'] = f"{dep_time} {dep_ampm}"
+                    # Try to extract date if available
+                    dep_date_tag = dep_info.select_one("span.text-xs.font-normal")
+                    if dep_date_tag:
+                        flight_data['departure']['date'] = dep_date_tag.get_text(strip=True)
+
+                if arr_info:
+                    arr_city_raw = arr_info.select_one("span.text-sm.font-normal").decode_contents().strip()
+                    flight_data['arrival']['city'] = re.split('<br.*?>', arr_city_raw)[0].strip()
+                    arr_time = arr_info.select_one("span.text-primary.text-2xl.font-semibold").get_text(strip=True)
+                    arr_ampm = arr_info.select_one("span.text-sm.font-semibold").get_text(strip=True)
+                    flight_data['arrival']['time'] = f"{arr_time} {arr_ampm}"
+                    # Try to extract date if available
+                    arr_date_tag = arr_info.select_one("span.text-xs.font-normal")
+                    if arr_date_tag:
+                        flight_data['arrival']['date'] = arr_date_tag.get_text(strip=True)
+                    
+                # Extract flight number and duration
+                flight_details = soup.select_one("div.font-roboto.flex.flex-col.basis-3")
+                flight_number = None
+                if flight_details:
+                    # Try to find a p tag that looks like a flight number (e.g., VJ1234)
+                    for p in flight_details.find_all('p'):
+                        text = p.get_text(strip=True)
+                        if re.match(r'^[A-Z]{2,3}\d{2,4}$', text):
+                            flight_number = text
+                            break
+                    # Fallback: use the first p tag if nothing matches
+                    if not flight_number and flight_details.find_all('p'):
+                        flight_number = flight_details.find_all('p')[0].get_text(strip=True)
+                flight_data['flight_number'] = flight_number
+
+                # Click to reveal fares and collect HTML for parsing
+                try:
+                    all_buttons = flight_element.find_elements(By.TAG_NAME, "button")
+                    
+                    fare_button = None
+                    button_selectors = [
+                        "button.bg-primary.text-white.font-black.font-roboto.w-full.text-xl.capitalize",
+                        "button.bg-primary.text-white",
+                        "button[class*='bg-primary'][class*='text-white']",
+                        "button:has(span:contains('₦'))",
+                        "button:has(i.fa-chevron-down)"
+                    ]
+                    
+                    for selector in button_selectors:
+                        try:
+                            fare_button = flight_element.find_element(By.CSS_SELECTOR, selector)
+                            break
+                        except:
+                            continue
+                    
+                    if fare_button is None:
+                        for button in all_buttons:
+                            try:
+                                button_text = button.text
+                                if '₦' in button_text and 'Starting at' in flight_element.text:
+                                    fare_button = button
+                                    break
+                            except:
+                                continue
+                    
+                    if fare_button is None:
+                        panel_htmls_to_parse.append((idx, ''))
+                        continue
+                    
+                    driver.execute_script("arguments[0].click();", fare_button)
+                    wait(1, 2)
+                    
+                    fare_panel = None
+                    selectors_to_try = [
+                        "div.p-accordion-content",
+                        "div[role='region']",
+                        "div.chakra-collapse",
+                        "div.chakra-accordion__panel",
+                        "div.grid.grid-cols-6",
+                        "div.flex.flex-col.gap-4"
+                    ]
+                    
+                    for selector in selectors_to_try:
+                        try:
+                            fare_panel = flight_element.find_element(By.CSS_SELECTOR, selector)
+                            break
+                        except:
+                            continue
+                    
+                    if fare_panel is None:
+                        panel_htmls_to_parse.append((idx, ''))
+                        continue
+                    
+                    panel_html = fare_panel.get_attribute('outerHTML')
+                    panel_htmls_to_parse.append((idx, panel_html))
+
+                except Exception as e:
+                    self.logger.warning(f"Could not click fare button for flight {idx}: {e}")
+                    panel_htmls_to_parse.append((idx, ''))
+
+                all_flights_data.append(flight_data)
+
+            # 2. Parse all collected fare panels in parallel
+            with ThreadPoolExecutor() as executor:
+                future_to_idx = {executor.submit(self._parse_valuejet_fares, html): idx for idx, html in panel_htmls_to_parse}
+                for future in as_completed(future_to_idx):
+                    idx = future_to_idx[future]
+                    try:
+                        fares = future.result()
+                        formatted_fares = []
+                        for fare in fares:
+                            if 'name' in fare and 'price' in fare:
+                                formatted_fares.append({'type': fare['name'], 'price': fare['price']})
+                        all_flights_data[idx]['fares'] = formatted_fares
+                    except Exception as exc:
+                        self.logger.warning(f'Flight {idx} generated an exception during fare parsing: {exc}')
+                        all_flights_data[idx]['fares'] = []
+
+            return all_flights_data
+
+        except Exception as e:
+            self.logger.error(f"Error in extract_valuejet_flights_table for {label}: {e}")
+            return []
+
+    def _parse_valuejet_fares(self, panel_html):
+        """Parse fare name and price from ValueJet fare panel HTML"""
+        soup = BeautifulSoup(panel_html, 'html.parser')
+        fares = []
+        if not panel_html:
+            return fares
+        
+        fare_buttons = soup.select("div.grid.grid-cols-6 > button")
+        for btn in fare_buttons:
+            fare_name_tag = btn.select_one("span.text-header")
+            price_tag = btn.select_one("h5.text-lg.text-primary.font-bold")
+            
+            if fare_name_tag and price_tag:
+                fare_name = fare_name_tag.get_text(strip=True)
+                price_text = price_tag.get_text(strip=True)
+                
+                price = "Sold Out" if "Sold Out" in price_text else price_text
+                fares.append({"name": fare_name, "price": price})
+        return fares
+
+
+    def _fill_greenafrica_form(self, driver: webdriver.Chrome, config: FlightSearchConfig):
+        """Fill Green Africa Airways search form"""
+        try:
+            # Remove cookie banner and floating tooltip
+            js_remove_banners = """
+            // Remove cookie banner
+            const cookieBtns = Array.from(document.querySelectorAll('button'));
+            const acceptBtn = cookieBtns.find(btn => btn.textContent.trim().toLowerCase().includes('accept cookies'));
+            if (acceptBtn) {
+                acceptBtn.click();
+            } else {
+                const banners = Array.from(document.querySelectorAll('div')).filter(div =>
+                    div.textContent.includes('We use cookies for essential site functionality')
+                );
+                banners.forEach(banner => banner.remove());
+            }
+            // Remove floating tooltip if present
+            const tip = document.getElementById('zs-fl-tip');
+            if (tip) tip.remove();
+            """
+            driver.execute_script(js_remove_banners)
+            wait(2, 3)
+            
+            # Wait for the search form to load
+            print("[+] Waiting for search form to load...")
+            WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "bookings-container"))
+            )
+            
+            # Select trip type
+            print(f"[+] Setting trip type to {config.trip_type.value}...")
+            try:
+                trip_type_text = "Round Trip" if config.trip_type == TripType.ROUND_TRIP else "One Way"
+                js = f"""
+                const btns = Array.from(document.querySelectorAll('button'));
+                const btn = btns.find(b => b.textContent.trim() === '{trip_type_text}');
+                if (btn) {{ btn.click(); return true; }} else {{ return false; }}
+                """
+                driver.execute_script(js, trip_type_text)
+                wait(1, 2)
+            except Exception as e:
+                self.logger.error(f"Error selecting trip type: {e}")
+                raise
+            
+            # Fill in departure city
+            print("[+] Selecting departure city...")
+            try:
+                departure_city = extract_airport_code(config.departure_city)
+                self._select_greenafrica_departure_city(driver, departure_city)
+            except Exception as e:
+                self.logger.error(f"Error selecting departure city: {e}")
+                raise
+
+            # Remove banners again after city selection
+            driver.execute_script(js_remove_banners)
+            wait(1, 1)
+            
+            # Fill in arrival city
+            print("[+] Selecting arrival city...")
+            try:
+                arrival_city = extract_airport_code(config.arrival_city)
+                self._select_greenafrica_arrival_city(driver, arrival_city)
+            except Exception as e:
+                self.logger.error(f"Error selecting arrival city: {e}")
+                raise
+            
+            # Remove banners again after city selection
+            driver.execute_script(js_remove_banners)
+            wait(1, 1)
+            
+            # Select departure date
+            print("[+] Setting departure date...")
+            try:
+                departure_date = self._convert_date_for_greenafrica(config.departure_date)
+                self._select_greenafrica_date_in_calendar(driver, departure_date)
+                wait(1, 1)
+            except Exception as e:
+                self.logger.error(f"Error setting departure date: {e}")
+                raise
+            
+            # Select return date if round trip
+            if config.trip_type == TripType.ROUND_TRIP:
+                print("[+] Setting return date...")
+                try:
+                    return_date = self._convert_date_for_greenafrica(config.return_date)
+                    self._select_greenafrica_date_in_calendar(driver, return_date)
+                except Exception as e:
+                    self.logger.error(f"Error setting return date: {e}")
+                    raise
+            
+            # Set passengers
+            print("[+] Setting passenger counts...")
+            try:
+                self._set_greenafrica_passengers(driver, config.adults, config.children, config.infants)
+            except Exception as e:
+                self.logger.error(f"Error setting passenger counts: {e}")
+                raise
+
+        except Exception as e:
+            self.logger.error(f"Error filling Green Africa form: {e}")
+            raise
+
+    def _select_greenafrica_departure_city(self, driver, code):
+        """Select departure city by airport code for Green Africa"""
+        # Click the custom container to open the dropdown
+        container = driver.find_element(By.CSS_SELECTOR, "div.cursor-text.gap-8")
+        container.click()
+        
+        # Wait for the dropdown to appear
+        WebDriverWait(driver, 5).until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, "div[role='button']"))
+        )
+        
+        # Select the city by code
+        js = f'''
+        const code = "{code}";
+        const btns = Array.from(document.querySelectorAll('div[role="button"]'));
+        for (const btn of btns) {{
+            const ps = btn.querySelectorAll('p');
+            if (ps.length && ps[ps.length-1].textContent.trim() === code) {{
+                try {{ btn.scrollIntoView({{block: 'center'}}); }} catch(e) {{ btn.scrollIntoView(true); }}
+                btn.click();
+                return true;
+            }}
+        }}
+        return false;
+        '''
+        result = driver.execute_script(js)
+        wait(1, 2)
+        if not result:
+            raise Exception(f"City code {code} not found in departure dropdown")
+
+    def _select_greenafrica_arrival_city(self, driver, code):
+        """Select arrival city by airport code for Green Africa"""
+        # Wait for the arrival dropdown to appear (it opens automatically after selecting departure)
+        WebDriverWait(driver, 5).until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, "div[role='button']"))
+        )
+        
+        # Select the city by code
+        js = f'''
+        const code = "{code}";
+        const btns = Array.from(document.querySelectorAll('div[role="button"]'));
+        for (const btn of btns) {{
+            const ps = btn.querySelectorAll('p');
+            if (ps.length && ps[ps.length-1].textContent.trim() === code) {{
+                try {{ btn.scrollIntoView({{block: 'center'}}); }} catch(e) {{ btn.scrollIntoView(true); }}
+                btn.click();
+                return true;
+            }}
+        }}
+        return false;
+        '''
+        result = driver.execute_script(js)
+        wait(1, 2)
+        if not result:
+            raise Exception(f"City code {code} not found in arrival dropdown")
+
+    def _convert_date_for_greenafrica(self, date_str: str):
+        """Convert date from 'dd MMM yyyy' to datetime.date object for Green Africa"""
+        import datetime
+        try:
+            # Convert from "dd MMM yyyy" to "dd/mm/yyyy"
+            parts = date_str.split()
+            month_map = {
+                'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04', 'May': '05', 'Jun': '06',
+                'Jul': '07', 'Aug': '08', 'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
+            }
+            day = parts[0]
+            month = month_map[parts[1]]
+            year = parts[2]
+            date_obj = datetime.datetime.strptime(f"{day}/{month}/{year}", "%d/%m/%Y").date()
+            return date_obj
+        except Exception as e:
+            self.logger.error(f"Error converting date {date_str}: {e}")
+            raise
+
+    def _select_greenafrica_date_in_calendar(self, driver, target_date):
+        """Select date in Green Africa calendar"""
+        import calendar
+
+        def parse_month_year(text):
+            month_str, year_str = text.split()
+            month = list(calendar.month_abbr).index(month_str[:3])
+            year = int(year_str)
+            return month, year
+
+        # Wait for calendar to be visible
+        WebDriverWait(driver, 5).until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, "p.text-md.font-600.text-brand_blue"))
+        )
+
+        for _ in range(36):  # Prevent infinite loop, max 3 years
+            headers = driver.find_elements(By.CSS_SELECTOR, "p.text-md.font-600.text-brand_blue")
+            months = []
+            for h in headers:
+                text = h.text.strip()
+                if not text:
+                    continue
+                try:
+                    months.append(parse_month_year(text))
+                except Exception as e:
+                    self.logger.warning(f"Failed to parse month header '{text}': {e}")
+            if not months:
+                raise Exception("No valid month headers found in calendar")
+
+            target_month, target_year = target_date.month, target_date.year
+            found = False
+            for idx, (month, year) in enumerate(months):
+                if month == target_month and year == target_year:
+                    found = True
+                    calendar_navs = driver.find_elements(By.CSS_SELECTOR, "nav.w-full.pb-24")
+                    if not calendar_navs:
+                        calendar_navs = driver.find_elements(By.CSS_SELECTOR, ".calendar--days")
+                    day_str = str(target_date.day)
+                    day_btns = calendar_navs[idx].find_elements(
+                        By.XPATH,
+                        f".//button[contains(@class, 'visible') and not(contains(@class, 'invisible')) and .//span[text()='{day_str}']]"
+                    )
+                    for btn in day_btns:
+                        try:
+                            if btn.is_enabled():
+                                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", btn)
+                                try:
+                                    btn.click()
+                                except Exception as e:
+                                    self.logger.warning(f"Normal click failed: {e}, trying JS click")
+                                    driver.execute_script("arguments[0].click();", btn)
+                                wait(1, 2)
+                                return
+                        except StaleElementReferenceException:
+                            break
+            if not found:
+                # Use the <a> in the last nav.w-full.flex.justify-between.px-12.py-12 as the right arrow
+                try:
+                    calendar_navs = driver.find_elements(By.CSS_SELECTOR, "nav.w-full.flex.justify-between.px-12.py-12")
+                    if calendar_navs:
+                        right_nav = calendar_navs[-1]
+                        next_btns = right_nav.find_elements(By.TAG_NAME, "a")
+                        if next_btns:
+                            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_btns[-1])
+                            driver.execute_script("arguments[0].click();", next_btns[-1])
+                            wait(1, 1)
+                        else:
+                            raise Exception("Could not find next month arrow in calendar")
+                    else:
+                        raise Exception("Could not find calendar navs for next month arrow")
+                except Exception as e:
+                    self.logger.warning(f"Error clicking next month arrow: {e}")
+                    wait(1, 1)
+                    continue
+        raise Exception("Desired month not found in calendar after many attempts")
+
+    def _set_greenafrica_passengers(self, driver, adults=1, children=0, infants=0):
+        """Set passenger counts for Green Africa"""
+        # Wait for the passenger card to be visible
+        WebDriverWait(driver, 5).until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, "div.w-full.md\\:w-\\[300px\\].absolute"))
+        )
+        
+        # Helper to set count for a given label
+        def set_count(label, target):
+            rows = driver.find_elements(By.CSS_SELECTOR, "div.w-full.py-\\[8px\\].h-\\[70px\\].flex.items-center.justify-between")
+            for row in rows:
+                try:
+                    if label in row.text:
+                        count_elem = row.find_element(By.CSS_SELECTOR, "p.text-2xl.font-semibold")
+                        current = int(count_elem.text.strip())
+                        plus_btn = row.find_elements(By.TAG_NAME, "button")[1]
+                        minus_btn = row.find_elements(By.TAG_NAME, "button")[0]
+                        while current < target:
+                            plus_btn.click()
+                            time.sleep(0.2)
+                            current += 1
+                        while current > target:
+                            minus_btn.click()
+                            time.sleep(0.2)
+                            current -= 1
+                        break
+                except Exception as e:
+                    continue
+        
+        set_count("Adult", adults)
+        set_count("Child", children)
+        set_count("Infant", infants)
+        
+        # Click Done
+        done_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Done')]")
+        done_btn.click()
+        wait(1, 1)
+
+    def _submit_greenafrica_search(self, driver: webdriver.Chrome):
+        """Submit Green Africa search form"""
+        try:
+            search_button = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((
+                    By.XPATH,
+                    "//button[contains(@class, 'rounded-[0.3125rem]') and contains(@class, 'bg-[#1eff5a]') and contains(text(), 'Search')]"
+                ))
+            )
+            # Scroll into view
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", search_button)
+            try:
+                search_button.click()
+            except Exception as e:
+                self.logger.warning(f"Normal click failed: {e}, trying JS click")
+                driver.execute_script("arguments[0].click();", search_button)
+            wait(1, 1)
+            
+            # Wait for search results to load
+            print("[+] Waiting for search results to load...")
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "bookings-container"))
+            )
+            
+            # Additional wait to ensure all content is loaded
+            wait(3, 4)
+            
+        except Exception as e:
+            self.logger.error(f"Error during Green Africa search: {e}")
+            raise
+
+    def _extract_greenafrica_results(self, driver: webdriver.Chrome, trip_type: TripType) -> Dict:
+        """Extract Green Africa flight results"""
+        try:
+            results = {}
+            
+            # Extract departure flights
+            print("[+] Extracting departure flights...")
+            try:
+                # Find all booking containers with the exact class
+                booking_containers = WebDriverWait(driver, 10).until(
+                    EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.flex.flex-col.gap-16.mt-12.w-full.bookings-container"))
+                )
+                # First container should be departure flights
+                if booking_containers:
+                    departure_flights = self._extract_greenafrica_flights_table(driver, booking_containers[0], "departure")
+                    if departure_flights:
+                        results['departure'] = departure_flights
+            except Exception as e:
+                self.logger.error(f"Error extracting departure flights: {e}")
+                
+            # Extract return flights if present
+            print("[+] Extracting return flights...")
+            try:
+                if len(booking_containers) > 1:
+                    return_flights = self._extract_greenafrica_flights_table(driver, booking_containers[1], "return")
+                    if return_flights:
+                        results['return'] = return_flights
+            except Exception as e:
+                self.logger.error(f"Error extracting return flights: {e}")
+                
+            return results if results else None
+
+        except Exception as e:
+            self.logger.error(f"Error in Green Africa results extraction: {e}")
+            return None
+
+    def _extract_greenafrica_flights_table(self, driver, container, label: str) -> List[Dict]:
+        """Extract flights from Green Africa table with ThreadPool"""
+        try:
+            flight_containers = container.find_elements(By.CSS_SELECTOR, ".chakra-accordion__item")
+            if not flight_containers:
+                self.logger.warning(f"No flight containers found for {label}")
+                return []
+
+            panel_htmls = []
+            flight_infos = []
+
+            # 1. Click all Select buttons and collect panel HTMLs
+            for idx, flight in enumerate(flight_containers):
+                flight_info = {
+                    'flight_number': None,
+                    'departure': {'time': None, 'city': None, 'date': None},
+                    'arrival': {'time': None, 'city': None, 'date': None},
+                    'fares': []
+                }
+                try:
+                    # Parse summary info with BeautifulSoup
+                    flight_html = flight.get_attribute('outerHTML')
+                    soup = BeautifulSoup(flight_html, 'html.parser')
+                    times = soup.select('h3.text-h4, h3.lg\\:text-\\[30px\\]')
+                    airports = soup.select('p.text-sm.lg\\:text-p')
+                    dates = soup.select('p.text-xs.lg\\:text-p')
+                    if len(times) >= 2 and len(airports) >= 2:
+                        flight_info['departure']['time'] = times[0].get_text(strip=True)
+                        flight_info['arrival']['time'] = times[1].get_text(strip=True)
+                        flight_info['departure']['city'] = airports[0].get_text(strip=True)
+                        flight_info['arrival']['city'] = airports[1].get_text(strip=True)
+                        # Try to extract dates if available
+                        if len(dates) >= 2:
+                            flight_info['departure']['date'] = dates[0].get_text(strip=True)
+                            flight_info['arrival']['date'] = dates[1].get_text(strip=True)
+                    # Flight number and type
+                    try:
+                        flight_no = soup.find('p', string=lambda t: t and 'Flight no.' in t)
+                        if flight_no:
+                            flight_info['flight_number'] = flight_no.find_next('p').get_text(strip=True)
+                        else:
+                            flight_info['flight_number'] = None
+                    except:
+                        flight_info['flight_number'] = None
+
+                    # Click the Select button
+                    try:
+                        select_btn = flight.find_element(By.CSS_SELECTOR, ".chakra-accordion__button")
+                        try:
+                            select_btn.click()
+                        except Exception as e:
+                            self.logger.warning(f"Native click failed for flight {idx}: {e}, trying JS click")
+                            driver.execute_script("arguments[0].click();", select_btn)
+                        time.sleep(0.5)
+                    except Exception as e:
+                        self.logger.warning(f"Could not click Select button for flight {idx}: {e}")
+                        continue
+
+                    # Get panel HTML
+                    try:
+                        panel = WebDriverWait(flight, 3).until(
+                            lambda d: flight.find_element(By.CSS_SELECTOR, ".chakra-accordion__panel")
+                        )
+                        panel_html = panel.get_attribute('outerHTML')
+                        panel_htmls.append((idx, panel_html))
+                        flight_infos.append(flight_info)
+                    except Exception as e:
+                        self.logger.warning(f"Error extracting fares for flight {idx}: {e}")
+                        continue
+
+                except Exception as e:
+                    self.logger.warning(f"Error extracting flight {idx}: {e}")
+                    continue
+
+            # 2. Parse all fare panels in parallel using ThreadPool
+            with ThreadPoolExecutor() as executor:
+                future_to_idx = {executor.submit(self._parse_greenafrica_fares, html): idx for idx, html in panel_htmls}
+                for future in as_completed(future_to_idx):
+                    idx = future_to_idx[future]
+                    try:
+                        fares = future.result()
+                        # Convert fares to the correct format: type/price
+                        formatted_fares = []
+                        for fare in fares:
+                            if 'name' in fare and 'price' in fare:
+                                formatted_fares.append({'type': fare['name'], 'price': fare['price']})
+                        flight_infos[idx]['fares'] = formatted_fares
+                    except Exception as e:
+                        self.logger.warning(f"Error in ThreadPool fare parsing for flight {idx}: {e}")
+                        flight_infos[idx]['fares'] = []
+
+            return flight_infos
+
+        except Exception as e:
+            self.logger.error(f"Error in extract_greenafrica_flights_table for {label}: {e}")
+            return []
+
+    def _parse_greenafrica_fares(self, panel_html):
+        """Parse fare name and price from Green Africa fare panel HTML"""
+        soup = BeautifulSoup(panel_html, "html.parser")
+        fares = []
+
+        # Use CSS selector for partial class match (robust to class order)
+        desktop_panel = soup.select_one("div.hidden.lg\\:grid")
+        if not desktop_panel:
+            self.logger.warning("No desktop panel found!")
+            return fares
+
+        for fare_div in desktop_panel.find_all("div", class_="box-shadow"):
+            name_tag = fare_div.find("h4", class_="text-h4")
+            price_btn = fare_div.find("button", class_="border-brand_blue")
+            price_tag = price_btn.find("span", class_="notranslate") if price_btn else None
+            if name_tag and price_tag:
+                fares.append({
+                    "name": name_tag.get_text(strip=True),
+                    "price": price_tag.get_text(strip=True)
+                })
+        return fares
+
 
 class SearchAirLineView(APIView):
     """Optimized Django view for concurrent airline search"""
@@ -1558,7 +2554,7 @@ class SearchAirLineView(APIView):
 
         try:
             # Create scraper with proxy IP
-            scraper = ConcurrentAirlineScraper(max_workers=9, proxy_ip=proxy_ip)
+            scraper = ConcurrentAirlineScraper(max_workers=12, proxy_ip=proxy_ip)
             # Perform search with optional airline filter
             results = scraper.search_all_airlines(search_config, airline)
             formatted_results = self._format_search_results(results, search_config)
@@ -1574,7 +2570,7 @@ class SearchAirLineView(APIView):
 
         try:
             # Create scraper with proxy IP
-            scraper = ConcurrentAirlineScraper(max_workers=9, proxy_ip=proxy_ip)
+            scraper = ConcurrentAirlineScraper(max_workers=12, proxy_ip=proxy_ip)
             results = self._perform_search(request, scraper)
             return Response(results)
         except Exception as e:
