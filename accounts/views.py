@@ -76,7 +76,7 @@ class AirlineConfig:
     key: str  # Key for response dict
 
 
-# Airline configurations - All 12 airlines
+# Airline configurations - All 11 airlines
 AIRLINES_CONFIG = [
     # Crane.aero based airlines (5 airlines)
     AirlineConfig("Air Peace", "https://book-airpeace.crane.aero/ibe/search", AirlineGroup.CRANE_AERO, "airpeace"),
@@ -568,7 +568,7 @@ class OptimizedCloudflareHandler:
 class ConcurrentAirlineScraper:
     """Main scraper class that handles all airline types concurrently"""
 
-    def __init__(self, max_workers: int = 12, proxy_ip: str = None):
+    def __init__(self, max_workers: int = 11, proxy_ip: str = None):
         self.max_workers = max_workers
         self.proxy_ip = proxy_ip
         self.logger = logging.getLogger(__name__)
@@ -2559,7 +2559,7 @@ class SearchAirLineView(APIView):
 
         try:
             # Create scraper with proxy IP
-            scraper = ConcurrentAirlineScraper(max_workers=12, proxy_ip=proxy_ip)
+            scraper = ConcurrentAirlineScraper(max_workers=11, proxy_ip=proxy_ip)
             # Perform search with optional airline filter
             results = scraper.search_all_airlines(search_config, airline)
             formatted_results = self._format_search_results(results, search_config)
@@ -2575,7 +2575,7 @@ class SearchAirLineView(APIView):
 
         try:
             # Create scraper with proxy IP
-            scraper = ConcurrentAirlineScraper(max_workers=12, proxy_ip=proxy_ip)
+            scraper = ConcurrentAirlineScraper(max_workers=11, proxy_ip=proxy_ip)
             results = self._perform_search(request, scraper)
             return Response(results)
         except Exception as e:
