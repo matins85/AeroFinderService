@@ -95,9 +95,6 @@ RUN pipenv install --deploy --system
 # Copy project files
 COPY . .
 
-# Set SECRET_KEY via ENV or fallback
-ENV SECRET_KEY="A2tYPIR2upcwIb7gpPHKywVTTUNnYGI3B614LxEBU3Y8d4W6gK"
-
 EXPOSE 8000
 
 # Run with Daphne (ASGI support)
