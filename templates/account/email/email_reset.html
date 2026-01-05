@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="m_8538333114748624586body m_8538333114748624586body-lg m_8538333114748624586body-link-babu m_8538333114748624586light m_8538333114748624586text-left" style="
+            padding: 0;
+            margin: 0;
+            font-family: 'SF Pro Display', Helvetica, Arial, sans-serif;
+            font-weight: 300;
+            color: #484848;
+            font-size: 18px;
+            line-height: 1.4;
+            text-align: left;
+            margin-bottom: 0px !important;
+          ">
+    {% load i18n %}
+    {% autoescape off %}
+        {% blocktrans %}
+            You are receiving this
+              email because someone requested an Email reset for your user account at
+            <a style="font-weight: bold; font-style: italic; color: purple" href="{{ website }}">{{ site_name }}</a>. If you are not the one please ignore else click on the button
+            <br/>
+            &nbsp; &nbsp;
+            {% endblocktrans %}
+        </p>
+
+        <p align="center">
+            <a target="_blank" style="
+                      text-decoration: none;
+                      background-color: #2E62A6;
+                      border: #2E62A6 1px solid;
+                      color: #fff;
+                      padding: 10px 10px;
+                      display: block;
+                    " href="{{ link }}">
+                <strong>Reset Email</strong>
+            </a>
+        </p>
+        <p class="m_8538333114748624586body m_8538333114748624586body-lg m_8538333114748624586body-link-babu m_8538333114748624586light m_8538333114748624586text-left" style="
+                    padding: 0;
+                    margin: 0;
+                    font-family: 'SF Pro Display', Helvetica, Arial, sans-serif;
+                    font-weight: 300;
+                    color: #484848;
+                    font-size: 18px;
+                    line-height: 1.4;
+                    text-align: left;
+                    margin-bottom: 0px !important;
+                  ">
+            <br/>
+            or link below
+            <br/>
+            {% block reset_link %}
+                {{ link }}
+            {% endblock %}
+            reset your e-mail.
+        {% endautoescape %}
+    </p>
+    <p class="m_8538333114748624586body m_8538333114748624586body-lg m_8538333114748624586body-link-babu m_8538333114748624586light m_8538333114748624586text-left" style="
+                padding: 0;
+                margin: 0;
+                font-family: 'SF Pro Display', Helvetica, Arial, sans-serif;
+                font-weight: 300;
+                color: #484848;
+                font-size: 18px;
+                line-height: 1.4;
+                text-align: left;
+                margin-bottom: 0px !important;
+              ">
+        &nbsp;
+    </p>
+
+    <p class="m_8538333114748624586body m_8538333114748624586body-lg m_8538333114748624586body-link-babu m_8538333114748624586light m_8538333114748624586text-left" style="
+                padding: 0;
+                margin: 0;
+                font-family: 'SF Pro Display', Helvetica, Arial, sans-serif;
+                font-weight: 300;
+                color: #484848;
+                font-size: 18px;
+                line-height: 1.4;
+                text-align: left;
+                margin-bottom: 0px !important;
+              ">
+        &nbsp;
+    </p>
+
+{% endblock %}

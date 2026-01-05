@@ -4,7 +4,7 @@ services:
       context: .
     container_name: aerofinder-backend
     ports:
-      - "8000:8000"
+      - "8003:8003"
     env_file:
       - .env
     volumes:
@@ -12,7 +12,26 @@ services:
       - ./logs:/code/logs
     restart: unless-stopped
     depends_on:
-      - redis  # ensure Redis starts before the web service
+      - db
+      - redis  # ensure Redis and database start before the web service
+
+  db:
+    image: postgres:15-alpine
+    container_name: aerofinder-db
+    environment:
+      POSTGRES_DB: ${DB_NAME:-aerofinder}
+      POSTGRES_USER: ${DB_USER:-aerofinder}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-aerofinder123}
+    ports:
+      - "5434:54324"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aerofinder}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7.2-alpine
@@ -24,5 +43,6 @@ services:
     restart: unless-stopped
 
 volumes:
+  postgres_data:
   redis_data:
 

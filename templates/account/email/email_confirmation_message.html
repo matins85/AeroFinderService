@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% load account %}
+{% load i18n %}
+
+{% block content %}
+    {% autoescape off %}
+        {% user_display user as user_display %}
+        {% blocktrans with site_name=current_site.name site_domain=current_site.domain %}
+        <p  class="m_8538333114748624586body m_8538333114748624586body-lg m_8538333114748624586body-link-babu m_8538333114748624586light m_8538333114748624586text-left" style="
+                    padding: 0;
+                    margin: 0;
+                    font-family: 'SF Pro Display', Helvetica, Arial, sans-serif;
+                    font-weight: 300;
+                    color: #484848;
+                    font-size: 18px;
+                    line-height: 1.4;
+                    text-align: left;
+                    margin-bottom: 0px !important;
+                  ">
+                        {{ display_text }}
+        </p>
+        <p align="center">
+            <a target="_blank" style="
+                      text-decoration: none;
+                      background-color: #2E62A6;
+                      border: #2E62A6 1px solid;
+                      color: #fff;
+                      padding: 10px 10px;
+                      display: block;
+                    " href="{{ activate_url }}">
+                <strong>Confirm now</strong>
+            </a>
+        </p>
+        <p class="m_8538333114748624586body m_8538333114748624586body-lg m_8538333114748624586body-link-babu m_8538333114748624586light m_8538333114748624586text-left" style="
+                    padding: 0;
+                    margin: 0;
+                    font-family: 'SF Pro Display', Helvetica, Arial, sans-serif;
+                    font-weight: 300;
+                    color: #484848;
+                    font-size: 18px;
+                    line-height: 1.4;
+                    text-align: left;
+                    margin-bottom: 0px !important;
+                  ">
+            or click the link below.
+            <br/>
+            {{ activate_url }}
+        </p>
+        {% endblocktrans %}
+    {% endautoescape %}
+{% endblock %}
